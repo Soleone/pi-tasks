@@ -11,7 +11,7 @@ export type ListIntent =
   | { type: "work" }
   | { type: "edit" }
   | { type: "toggleStatus" }
-  | { type: "setPriority"; priority: number }
+  | { type: "setPriority"; priority: string }
   | { type: "scrollDescription"; delta: number }
   | { type: "toggleType" }
   | { type: "create" }
@@ -24,22 +24,48 @@ export interface ListControllerState {
   allowSearch: boolean
   allowPriority: boolean
   ctrlQ: string
+  priorities: string[]
 }
 
 type ShortcutContext = "default" | "search"
 
 interface ShortcutDefinition {
   context: ShortcutContext
-  help?: string
+  help?: string | ((state: ListControllerState) => string)
   showInHelp?: (state: ListControllerState) => boolean
   match: (data: string, state: ListControllerState) => boolean
-  intent: (data: string) => ListIntent
+  intent: (data: string, state: ListControllerState) => ListIntent
 }
 
-function parsePriorityKey(data: string): number | null {
+function parsePriorityKey(data: string, priorities: string[]): string | null {
   if (data.length !== 1) return null
-  const num = parseInt(data, 10)
-  return !isNaN(num) && num >= 0 && num <= 4 ? num : null
+
+  const direct = priorities.find(priority => priority.toLowerCase() === data.toLowerCase())
+  if (direct) return direct
+
+  const prefixed = priorities.find(priority => {
+    const match = priority.toLowerCase().match(/^p(\d)$/)
+    return !!match && match[1] === data
+  })
+
+  return prefixed ?? null
+}
+
+function buildPriorityHelpText(priorities: string[]): string {
+  const digits = priorities
+    .map(priority => priority.toLowerCase().match(/^p(\d)$/)?.[1])
+    .filter((value): value is string => value !== undefined)
+
+  if (digits.length === priorities.length && digits.length > 0) {
+    const numeric = digits.map(Number).sort((a, b) => a - b)
+    const isRange = numeric.every((value, index) => index === 0 || value === numeric[index - 1] + 1)
+    if (isRange && numeric.length > 1) {
+      return `${numeric[0]}-${numeric[numeric.length - 1]} priority`
+    }
+    return `${numeric.join("/")} priority`
+  }
+
+  return "priority"
 }
 
 function isPrintable(data: string): boolean {
@@ -107,10 +133,10 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
-    help: "0-4 priority",
+    help: (state) => buildPriorityHelpText(state.priorities),
     showInHelp: (state) => state.allowPriority,
-    match: (data, state) => state.allowPriority && parsePriorityKey(data) !== null,
-    intent: (data) => ({ type: "setPriority", priority: parsePriorityKey(data) ?? 0 }),
+    match: (data, state) => state.allowPriority && parsePriorityKey(data, state.priorities) !== null,
+    intent: (data, state) => ({ type: "setPriority", priority: parsePriorityKey(data, state.priorities) ?? state.priorities[0] ?? "" }),
   },
   {
     context: "default",
@@ -158,7 +184,7 @@ export function resolveListIntent(data: string, state: ListControllerState): Lis
   const context: ShortcutContext = state.searching ? "search" : "default"
   for (const shortcut of SHORTCUT_DEFINITIONS) {
     if (shortcut.context !== context) continue
-    if (shortcut.match(data, state)) return shortcut.intent(data)
+    if (shortcut.match(data, state)) return shortcut.intent(data, state)
   }
   return { type: "delegate" }
 }
@@ -169,7 +195,7 @@ export function buildListPrimaryHelpText(state: ListControllerState): string {
     .filter(s => s.context === context)
     .filter(s => !!s.help)
     .filter(s => (s.showInHelp ? s.showInHelp(state) : true))
-    .map(s => s.help as string)
+    .map(s => (typeof s.help === "function" ? s.help(state) : s.help as string))
 
   if (context === "default") {
     parts.push(state.filtered ? "esc clear filter" : "esc cancel")

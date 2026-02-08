@@ -1,16 +1,22 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
-import type { Task } from "../../models/task.ts"
-import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskUpdate } from "../api.ts"
+import type { Task, TaskStatus } from "../../models/task.ts"
+import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskStatusMap, TaskUpdate } from "../api.ts"
 
 const MAX_LIST_RESULTS = 100
-const STATUS_CYCLE = ["open", "in_progress", "closed"] as const
-const TASK_TYPES = ["task", "feature", "bug", "chore", "epic"] as const
+const STATUS_MAP: TaskStatusMap = {
+  open: "open",
+  inProgress: "in_progress",
+  closed: "closed",
+}
+const TASK_TYPES = ["task", "feature", "bug", "chore", "epic"]
+const PRIORITIES = ["p0", "p1", "p2", "p3", "p4"]
+
 const ACTIVE_TASK_LIST_ARGS = [
   "list",
-  "--status", "open",
-  "--status", "in_progress",
+  "--status", STATUS_MAP.open,
+  "--status", STATUS_MAP.inProgress,
   "--limit", String(MAX_LIST_RESULTS),
   "--sort", "priority",
   "--json",
@@ -20,15 +26,51 @@ interface BeadsIssue {
   id: string
   title: string
   description?: string
-  status: Task["status"]
+  status: string
   priority?: number
   issue_type?: string
   owner?: string
   created_at?: string
+  due_at?: string
+  due?: string
   updated_at?: string
   dependency_count?: number
   dependent_count?: number
   comment_count?: number
+}
+
+function toPriorityLabel(value: number | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const label = `p${value}`
+  return PRIORITIES.includes(label) ? label : undefined
+}
+
+function toPriorityValue(label: string | undefined): number | undefined {
+  if (!label) return undefined
+  const match = label.toLowerCase().match(/^p(\d)$/)
+  if (!match) return undefined
+  return Number(match[1])
+}
+
+function toRequiredPriorityValue(label: string): number {
+  const value = toPriorityValue(label)
+  if (value === undefined) {
+    throw new Error(`Unsupported priority for beads backend: ${label}`)
+  }
+  return value
+}
+
+function fromBackendStatus(status: string): TaskStatus {
+  for (const [internalStatus, backendStatus] of Object.entries(STATUS_MAP)) {
+    if (backendStatus === status) return internalStatus as TaskStatus
+  }
+  return "open"
+}
+
+function toBackendStatus(status: TaskStatus): string {
+  const mapped = STATUS_MAP[status]
+  if (!mapped) throw new Error(`Unsupported status for beads backend: ${status}`)
+  return mapped
 }
 
 function toTask(beadsIssue: BeadsIssue): Task {
@@ -36,13 +78,15 @@ function toTask(beadsIssue: BeadsIssue): Task {
     id: beadsIssue.id,
     title: beadsIssue.title,
     description: beadsIssue.description,
-    status: beadsIssue.status,
+    status: fromBackendStatus(beadsIssue.status),
     owner: beadsIssue.owner,
-    priority: beadsIssue.priority,
+    priority: toPriorityLabel(beadsIssue.priority),
   }
 
   if (beadsIssue.issue_type !== undefined) task.taskType = beadsIssue.issue_type
   if (beadsIssue.created_at !== undefined) task.createdAt = beadsIssue.created_at
+  if (beadsIssue.due_at !== undefined) task.dueAt = beadsIssue.due_at
+  if (beadsIssue.due !== undefined) task.dueAt = beadsIssue.due
   if (beadsIssue.updated_at !== undefined) task.updatedAt = beadsIssue.updated_at
   if (beadsIssue.dependency_count !== undefined) task.dependencyCount = beadsIssue.dependency_count
   if (beadsIssue.dependent_count !== undefined) task.dependentCount = beadsIssue.dependent_count
@@ -52,16 +96,15 @@ function toTask(beadsIssue: BeadsIssue): Task {
 }
 
 function taskStatusSortRank(status: Task["status"]): number {
-  if (status === "in_progress") return 0
+  if (status === "inProgress") return 0
   if (status === "open") return 1
   return 2
 }
 
-function byTaskPriority(a: Task, b: Task): number {
-  if (a.priority === undefined && b.priority === undefined) return 0
-  if (a.priority === undefined) return 1
-  if (b.priority === undefined) return -1
-  return a.priority - b.priority
+function taskPrioritySortRank(priority: string | undefined): number {
+  if (!priority) return PRIORITIES.length + 1
+  const index = PRIORITIES.indexOf(priority)
+  return index >= 0 ? index : PRIORITIES.length
 }
 
 function sortActiveTasks(tasks: Task[]): Task[] {
@@ -69,7 +112,7 @@ function sortActiveTasks(tasks: Task[]): Task[] {
     const statusOrder = taskStatusSortRank(left.status) - taskStatusSortRank(right.status)
     if (statusOrder !== 0) return statusOrder
 
-    const priorityOrder = byTaskPriority(left, right)
+    const priorityOrder = taskPrioritySortRank(left.priority) - taskPrioritySortRank(right.priority)
     if (priorityOrder !== 0) return priorityOrder
 
     return left.id.localeCompare(right.id)
@@ -88,15 +131,19 @@ function fromTaskUpdateToBeadsArgs(update: TaskUpdate): string[] {
   }
 
   if (update.status !== undefined) {
-    args.push("--status", update.status)
+    args.push("--status", toBackendStatus(update.status))
   }
 
   if (update.priority !== undefined) {
-    args.push("--priority", String(update.priority))
+    args.push("--priority", String(toRequiredPriorityValue(update.priority)))
   }
 
   if (update.taskType !== undefined) {
-    args.push("--type", update.taskType || "task")
+    args.push("--type", update.taskType || TASK_TYPES[0])
+  }
+
+  if (update.dueAt !== undefined) {
+    args.push("--due", update.dueAt)
   }
 
   return args
@@ -149,8 +196,9 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
 
   return {
     id: "beads",
-    statusCycle: [...STATUS_CYCLE],
-    taskTypes: [...TASK_TYPES],
+    statusMap: STATUS_MAP,
+    taskTypes: TASK_TYPES,
+    priorities: PRIORITIES,
 
     async list(): Promise<Task[]> {
       const out = await execBd(ACTIVE_TASK_LIST_ARGS)
@@ -171,16 +219,21 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
     async create(input: CreateTaskInput): Promise<Task> {
       const title = input.title.trim()
       const status = input.status ?? "open"
+      const selectedPriority = input.priority ?? PRIORITIES[Math.floor(PRIORITIES.length / 2)]
       const createArgs = [
         "create",
         "--title", title,
-        "--priority", String(input.priority ?? 2),
-        "--type", input.taskType || "task",
+        "--priority", String(toRequiredPriorityValue(selectedPriority)),
+        "--type", input.taskType || TASK_TYPES[0],
         "--json",
       ]
 
       if (input.description && input.description.length > 0) {
         createArgs.splice(3, 0, "--description", input.description)
+      }
+
+      if (input.dueAt && input.dueAt.length > 0) {
+        createArgs.splice(3, 0, "--due", input.dueAt)
       }
 
       const out = await execBd(createArgs)
@@ -200,6 +253,10 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
 
       if (input.taskType !== undefined) {
         created.taskType = input.taskType
+      }
+
+      if (input.dueAt !== undefined) {
+        created.dueAt = input.dueAt
       }
 
       return created

@@ -69,8 +69,9 @@ Required shape:
 - `id: string`
 - `isApplicable(): boolean` (detect if adapter should be used in current workspace)
 - `initialize(pi)` returning a `TaskAdapter` with:
-  - `statusCycle`
-  - `taskTypes`
+  - `statusMap` (internal camelCase status -> backend status)
+  - `taskTypes` (toggle order, first is default)
+  - `priorities` (highest-first order, middle is default)
   - `list`, `show`, `update`, `create`
 
 Resolution behavior:
@@ -79,7 +80,7 @@ Resolution behavior:
 2. otherwise the first adapter with `isApplicable() === true` is used
 3. if none apply, first loaded adapter is used as fallback
 
-Keep backend-specific field mapping inside adapter files only (e.g. beads `issue_type`), and keep app-level types in task-oriented camelCase.
+Keep backend-specific field mapping inside adapter files only (e.g. beads `issue_type`, `in_progress`, `created_at`, `due_at`), and keep app-level types in task-oriented camelCase (`taskType`, `inProgress`, `createdAt`, `dueAt`).
 
 ## Implementation details
 

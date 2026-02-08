@@ -29,7 +29,8 @@ interface ShowTaskFormOptions {
   ctrlQ: string
   cycleStatus: (status: TaskStatus) => TaskStatus
   cycleTaskType: (taskType: string | undefined) => string
-  parsePriorityKey: (data: string) => number | null
+  parsePriorityKey: (data: string) => string | null
+  priorities: string[]
   onSave: (draft: FormDraft) => Promise<boolean>
 }
 
@@ -46,7 +47,7 @@ function buildSelectedTaskLine(
   theme: any,
   rowIdentity: string,
   rowMeta: string,
-  priority: number | undefined,
+  priority: string | undefined,
   taskType: string | undefined,
 ): string {
   if (mode === "create") {
@@ -142,7 +143,7 @@ class ReservedLineText implements Component {
 }
 
 export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTaskFormOptions): Promise<TaskFormResult> {
-  const { mode, subtitle, task, ctrlQ, cycleStatus, cycleTaskType, parsePriorityKey, onSave } = options
+  const { mode, subtitle, task, ctrlQ, cycleStatus, cycleTaskType, parsePriorityKey, priorities, onSave } = options
 
   let taskTypeValue = task.taskType
   let titleValue = task.title
@@ -285,7 +286,7 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
       descLabel.setText(fieldLabel(theme, "Description", focus === "desc"))
 
       helpText.setText(formatKeyboardHelp(theme, buildPrimaryHelpText(focus)))
-      const secondaryHelp = buildSecondaryHelpText(focus)
+      const secondaryHelp = buildSecondaryHelpText(focus, priorities)
       shortcutsText.setText(secondaryHelp ? formatKeyboardHelp(theme, secondaryHelp) : "")
 
       container.invalidate()

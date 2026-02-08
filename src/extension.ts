@@ -8,13 +8,22 @@ import type { TaskUpdate } from "./backend/api.ts"
 
 const CTRL_Q = "\x11"
 
-function parsePriorityKey(data: string): number | null {
+function parsePriorityKey(data: string, priorities: string[]): string | null {
   if (data.length !== 1) return null
-  const num = parseInt(data, 10)
-  return !isNaN(num) && num >= 0 && num <= 4 ? num : null
+
+  const directMatch = priorities.find(priority => priority.toLowerCase() === data.toLowerCase())
+  if (directMatch) return directMatch
+
+  const prefixedMatch = priorities.find(priority => {
+    const match = priority.toLowerCase().match(/^p(\d)$/)
+    return !!match && match[1] === data
+  })
+
+  return prefixedMatch ?? null
 }
 
-function cycleStatus(current: TaskStatus, statusCycle: TaskStatus[]): TaskStatus {
+function cycleStatus(current: TaskStatus, statusMap: Record<string, string>): TaskStatus {
+  const statusCycle = Object.keys(statusMap) as TaskStatus[]
   if (statusCycle.length === 0) return "open"
   const idx = statusCycle.indexOf(current)
   if (idx === -1) return statusCycle[0]
@@ -29,6 +38,51 @@ function cycleTaskType(current: string | undefined, taskTypes: string[]): string
   return taskTypes[(idx + 1) % taskTypes.length]
 }
 
+function defaultPriority(priorities: string[]): string | undefined {
+  if (priorities.length === 0) return undefined
+  return priorities[Math.floor(priorities.length / 2)]
+}
+
+function defaultTaskType(taskTypes: string[]): string | undefined {
+  return taskTypes[0]
+}
+
+function hasUniqueValues(values: string[]): boolean {
+  return new Set(values).size === values.length
+}
+
+function validateBackendConfiguration(backend: {
+  id: string
+  statusMap: Record<string, string>
+  taskTypes: string[]
+  priorities: string[]
+}): void {
+  const statusKeys = Object.keys(backend.statusMap)
+  if (statusKeys.length === 0) {
+    throw new Error(`Invalid backend config (${backend.id}): statusMap must not be empty`)
+  }
+
+  if (!statusKeys.includes("open") || !statusKeys.includes("inProgress") || !statusKeys.includes("closed")) {
+    throw new Error(`Invalid backend config (${backend.id}): statusMap must include open, inProgress, closed`)
+  }
+
+  if (backend.taskTypes.length === 0) {
+    throw new Error(`Invalid backend config (${backend.id}): taskTypes must not be empty`)
+  }
+
+  if (!hasUniqueValues(backend.taskTypes)) {
+    throw new Error(`Invalid backend config (${backend.id}): taskTypes must be unique`)
+  }
+
+  if (backend.priorities.length < 3 || backend.priorities.length > 5) {
+    throw new Error(`Invalid backend config (${backend.id}): priorities must contain 3 to 5 values`)
+  }
+
+  if (!hasUniqueValues(backend.priorities)) {
+    throw new Error(`Invalid backend config (${backend.id}): priorities must be unique`)
+  }
+}
+
 interface EditTaskResult {
   updatedTask: Task | null
   closeList: boolean
@@ -38,7 +92,7 @@ function buildTaskUpdate(previous: Task, next: {
   title: string
   description: string
   status: TaskStatus
-  priority: number | undefined
+  priority: string | undefined
   taskType: string | undefined
 }): TaskUpdate {
   const update: TaskUpdate = {}
@@ -77,7 +131,7 @@ function applyDraftToTask(
     title: string
     description: string
     status: TaskStatus
-    priority: number | undefined
+    priority: string | undefined
     taskType: string | undefined
   },
 ): Task {
@@ -105,9 +159,11 @@ function applyDraftToTask(
 
 export default function registerExtension(pi: ExtensionAPI) {
   const backend = initializeAdapter(pi)
+  validateBackendConfiguration(backend)
 
-  const nextStatus = (status: TaskStatus): TaskStatus => cycleStatus(status, backend.statusCycle)
+  const nextStatus = (status: TaskStatus): TaskStatus => cycleStatus(status, backend.statusMap)
   const nextTaskType = (current: string | undefined): string => cycleTaskType(current, backend.taskTypes)
+  const nextPriorityFromKey = (data: string): string | null => parsePriorityKey(data, backend.priorities)
 
   async function listTasks(): Promise<Task[]> {
     return backend.list()
@@ -141,7 +197,8 @@ export default function registerExtension(pi: ExtensionAPI) {
       ctrlQ: CTRL_Q,
       cycleStatus: nextStatus,
       cycleTaskType: nextTaskType,
-      parsePriorityKey,
+      parsePriorityKey: nextPriorityFromKey,
+      priorities: backend.priorities,
       onSave: async (draft) => {
         const update = buildTaskUpdate(task, {
           title: draft.title,
@@ -182,13 +239,14 @@ export default function registerExtension(pi: ExtensionAPI) {
         title: "",
         description: "",
         status: "open",
-        priority: 2,
-        taskType: "task",
+        priority: defaultPriority(backend.priorities),
+        taskType: defaultTaskType(backend.taskTypes),
       },
       ctrlQ: CTRL_Q,
       cycleStatus: nextStatus,
       cycleTaskType: nextTaskType,
-      parsePriorityKey,
+      parsePriorityKey: nextPriorityFromKey,
+      priorities: backend.priorities,
       onSave: async (draft) => {
         const title = draft.title.trim()
         if (title.length === 0) {
@@ -245,6 +303,7 @@ export default function registerExtension(pi: ExtensionAPI) {
         subtitle: backendLabel,
         tasks,
         ctrlQ: CTRL_Q,
+        priorities: backend.priorities,
         cycleStatus: nextStatus,
         cycleTaskType: nextTaskType,
         onUpdateTask: updateTask,

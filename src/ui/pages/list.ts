@@ -1,6 +1,6 @@
 import { DynamicBorder, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
 import { Container, SelectList, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui"
-import type { Task, TaskStatus } from "../../models/task.ts"
+import { toKebabCase, type Task, type TaskStatus } from "../../models/task.ts"
 import type { TaskUpdate } from "../../backend/api.ts"
 import { DESCRIPTION_PART_SEPARATOR, buildListRowModel, decodeDescription, stripAnsi } from "../../models/list-item.ts"
 import { buildListPrimaryHelpText, buildListSecondaryHelpText, resolveListIntent } from "../../controllers/list.ts"
@@ -16,6 +16,7 @@ export interface ListPageConfig {
   allowPriority?: boolean
   allowSearch?: boolean
   filterTerm?: string
+  priorities: string[]
   ctrlQ: string
   cycleStatus: (status: TaskStatus) => TaskStatus
   cycleTaskType: (current: string | undefined) => string
@@ -40,7 +41,7 @@ function matchesFilter(task: Task, term: string): boolean {
     task.title.toLowerCase().includes(lower) ||
     (task.description ?? "").toLowerCase().includes(lower) ||
     task.id.toLowerCase().includes(lower) ||
-    task.status.toLowerCase().includes(lower)
+    toKebabCase(task.status).includes(lower)
   )
 }
 
@@ -288,6 +289,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
           allowPriority,
           allowSearch,
           ctrlQ: config.ctrlQ,
+          priorities: config.priorities,
         })))
       }
       refreshDisplay()
@@ -378,6 +380,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
             allowSearch,
             allowPriority,
             ctrlQ: config.ctrlQ,
+            priorities: config.priorities,
           })
 
           switch (intent.type) {
