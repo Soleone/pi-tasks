@@ -1,21 +1,21 @@
-export type IssueStatus = "open" | "in_progress" | "blocked" | "deferred" | "closed"
+export type TaskStatus = "open" | "in_progress" | "blocked" | "deferred" | "closed"
 
-export interface Issue {
+export interface Task {
   id: string
   title: string
   description?: string
-  status: IssueStatus
+  status: TaskStatus
   priority?: number
-  issue_type?: string
+  taskType?: string
   owner?: string
-  created_at?: string
-  updated_at?: string
-  dependency_count?: number
-  dependent_count?: number
-  comment_count?: number
+  createdAt?: string
+  updatedAt?: string
+  dependencyCount?: number
+  dependentCount?: number
+  commentCount?: number
 }
 
-interface IssueListElements {
+interface TaskListElements {
   id: string
   title: string
   status: string
@@ -23,7 +23,7 @@ interface IssueListElements {
   summary?: string
 }
 
-export interface IssueListTextParts {
+export interface TaskListTextParts {
   identity: string
   title: string
   meta: string
@@ -38,7 +38,7 @@ const PRIORITY_COLORS: Record<number, string> = {
   4: "\x1b[38;5;245m",
 }
 
-const STATUS_SYMBOLS: Record<IssueStatus, string> = {
+const STATUS_SYMBOLS: Record<TaskStatus, string> = {
   open: "○",
   in_progress: "◑",
   blocked: "✖",
@@ -49,7 +49,7 @@ const STATUS_SYMBOLS: Record<IssueStatus, string> = {
 const MUTED_TEXT = "\x1b[38;5;245m"
 const ANSI_RESET = "\x1b[0m"
 
-export function formatIssuePriority(priority: number | undefined): string {
+export function formatTaskPriority(priority: number | undefined): string {
   if (priority === undefined || priority === null) return "P?"
   const color = PRIORITY_COLORS[priority] ?? ""
   return `${color}P${priority}${ANSI_RESET}`
@@ -60,11 +60,11 @@ function stripIdPrefix(id: string): string {
   return idx >= 0 ? id.slice(idx + 1) : id
 }
 
-export function formatIssueTypeCode(issueType: string | undefined): string {
-  return (issueType || "issue").slice(0, 4).padEnd(4)
+export function formatTaskTypeCode(taskType: string | undefined): string {
+  return (taskType || "task").slice(0, 4).padEnd(4)
 }
 
-export function formatIssueStatusSymbol(status: IssueStatus): string {
+export function formatTaskStatusSymbol(status: TaskStatus): string {
   return STATUS_SYMBOLS[status] ?? "?"
 }
 
@@ -74,28 +74,29 @@ function firstLine(text: string | undefined): string | undefined {
   return line && line.length > 0 ? line : undefined
 }
 
-function buildIssueListElements(issue: Issue): IssueListElements {
+function buildTaskListElements(task: Task): TaskListElements {
   return {
-    id: stripIdPrefix(issue.id),
-    title: issue.title,
-    status: formatIssueStatusSymbol(issue.status),
-    type: formatIssueTypeCode(issue.issue_type),
-    summary: firstLine(issue.description),
+    id: stripIdPrefix(task.id),
+    title: task.title,
+    status: formatTaskStatusSymbol(task.status),
+    type: formatTaskTypeCode(task.taskType),
+    summary: firstLine(task.description),
   }
 }
 
-export function buildIssueIdentityText(priority: number | undefined, idText: string): string {
+export function buildTaskIdentityText(priority: number | undefined, idText: string): string {
   const mutedId = `${MUTED_TEXT}${idText}${ANSI_RESET}`
-  return `${formatIssuePriority(priority)} ${mutedId}`
+  return `${formatTaskPriority(priority)} ${mutedId}`
 }
 
-export function buildIssueListTextParts(issue: Issue): IssueListTextParts {
-  const elements = buildIssueListElements(issue)
+export function buildTaskListTextParts(task: Task): TaskListTextParts {
+  const elements = buildTaskListElements(task)
 
   return {
-    identity: buildIssueIdentityText(issue.priority, elements.id),
+    identity: buildTaskIdentityText(task.priority, elements.id),
     title: elements.title,
     meta: `${elements.status} ${elements.type}`,
     summary: elements.summary,
   }
 }
+

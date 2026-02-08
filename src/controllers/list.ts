@@ -15,7 +15,7 @@ export type ListIntent =
   | { type: "scrollDescription"; delta: number }
   | { type: "toggleType" }
   | { type: "create" }
-  | { type: "reference" }
+  | { type: "insert" }
   | { type: "delegate" }
 
 export interface ListControllerState {
@@ -24,7 +24,6 @@ export interface ListControllerState {
   allowSearch: boolean
   allowPriority: boolean
   ctrlQ: string
-  ctrlF: string
 }
 
 type ShortcutContext = "default" | "search"
@@ -144,9 +143,9 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
-    help: "tab reference",
+    help: "tab insert",
     match: (data) => matchesKey(data, Key.tab),
-    intent: () => ({ type: "reference" }),
+    intent: () => ({ type: "insert" }),
   },
   {
     context: "default",

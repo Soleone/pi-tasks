@@ -26,3 +26,12 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 
 - `Tab` to switch focus between inputs
 - `Enter` to save
+
+## Backend selection
+
+By default, the extension auto-detects `beads` when a `.beads` directory exists in the current workspace (and currently falls back to `beads` as well).
+
+Set `PI_TASKS_BACKEND` to explicitly choose a backend implementation.
+Currently supported values:
+
+- `beads`

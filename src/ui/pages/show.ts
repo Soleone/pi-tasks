@@ -11,24 +11,24 @@ import {
   type FormMode,
   type HeaderStatus,
 } from "../../controllers/show.ts"
-import { buildIssueIdentityText, buildIssueListTextParts, formatIssueTypeCode, type Issue, type IssueStatus } from "../../models/issue.ts"
+import { buildTaskIdentityText, buildTaskListTextParts, formatTaskTypeCode, type Task, type TaskStatus } from "../../models/task.ts"
 import { BlurEditorField } from "../components/blur-editor.ts"
 import { KEYBOARD_HELP_PADDING_X, formatKeyboardHelp } from "../components/keyboard-help.ts"
 import { MinHeightContainer } from "../components/min-height.ts"
 
-export type IssueFormAction = "back" | "close_list"
+export type TaskFormAction = "back" | "close_list"
 
-export interface IssueFormResult {
-  action: IssueFormAction
+export interface TaskFormResult {
+  action: TaskFormAction
 }
 
-interface ShowIssueFormOptions {
+interface ShowTaskFormOptions {
   mode: FormMode
   subtitle: string
-  issue: Issue
+  task: Task
   ctrlQ: string
-  cycleStatus: (status: IssueStatus) => IssueStatus
-  cycleIssueType: (issueType: string | undefined) => string
+  cycleStatus: (status: TaskStatus) => TaskStatus
+  cycleTaskType: (taskType: string | undefined) => string
   parsePriorityKey: (data: string) => number | null
   onSave: (draft: FormDraft) => Promise<boolean>
 }
@@ -47,11 +47,11 @@ function buildSelectedTaskLine(
   rowIdentity: string,
   rowMeta: string,
   priority: number | undefined,
-  issueType: string | undefined,
+  taskType: string | undefined,
 ): string {
   if (mode === "create") {
-    const identity = buildIssueIdentityText(priority, "new")
-    return `${theme.fg("accent", SELECTED_ITEM_PREFIX)}${identity} ${formatIssueTypeCode(issueType)}`
+    const identity = buildTaskIdentityText(priority, "new")
+    return `${theme.fg("accent", SELECTED_ITEM_PREFIX)}${identity} ${formatTaskTypeCode(taskType)}`
   }
 
   return `${theme.fg("accent", SELECTED_ITEM_PREFIX)}${rowIdentity} ${rowMeta}`
@@ -141,16 +141,16 @@ class ReservedLineText implements Component {
   }
 }
 
-export async function showIssueForm(ctx: ExtensionCommandContext, options: ShowIssueFormOptions): Promise<IssueFormResult> {
-  const { mode, subtitle, issue, ctrlQ, cycleStatus, cycleIssueType, parsePriorityKey, onSave } = options
+export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTaskFormOptions): Promise<TaskFormResult> {
+  const { mode, subtitle, task, ctrlQ, cycleStatus, cycleTaskType, parsePriorityKey, onSave } = options
 
-  let issueTypeValue = issue.issue_type
-  let titleValue = issue.title
-  let descValue = issue.description ?? ""
-  let statusValue = issue.status
-  let priorityValue = issue.priority
+  let taskTypeValue = task.taskType
+  let titleValue = task.title
+  let descValue = task.description ?? ""
+  let statusValue = task.status
+  let priorityValue = task.priority
 
-  return ctx.ui.custom<IssueFormResult>((tui: any, theme: any, _kb: any, done: any) => {
+  return ctx.ui.custom<TaskFormResult>((tui: any, theme: any, _kb: any, done: any) => {
     const container = new Container()
     const headerContainer = new Container()
     const formContainer = new Container()
@@ -220,7 +220,7 @@ export async function showIssueForm(ctx: ExtensionCommandContext, options: ShowI
       description: descValue,
       status: statusValue,
       priority: priorityValue,
-      issueType: issueTypeValue,
+      taskType: taskTypeValue,
     })
 
     let lastSavedDraft: FormDraft = currentDraft()
@@ -267,19 +267,19 @@ export async function showIssueForm(ctx: ExtensionCommandContext, options: ShowI
       titleEditor.focused = focus === "title"
       descEditor.focused = focus === "desc"
 
-      const rowParts = buildIssueListTextParts({
-        ...issue,
+      const rowParts = buildTaskListTextParts({
+        ...task,
         title: titleValue,
         description: descValue,
         status: statusValue,
         priority: priorityValue,
-        issue_type: issueTypeValue,
+        taskType: taskTypeValue,
       })
 
       const headerStatus = getHeaderStatus(saveIndicator, focus)
       pageTitleText.setText(buildPageTitle(theme, subtitle, headerStatus))
       selectedTaskText.setText(
-        buildSelectedTaskLine(mode, theme, rowParts.identity, rowParts.meta, priorityValue, issueTypeValue),
+        buildSelectedTaskLine(mode, theme, rowParts.identity, rowParts.meta, priorityValue, taskTypeValue),
       )
       titleLabel.setText(fieldLabel(theme, "Title", focus === "title"))
       descLabel.setText(fieldLabel(theme, "Description", focus === "desc"))
@@ -369,7 +369,7 @@ export async function showIssueForm(ctx: ExtensionCommandContext, options: ShowI
       }
 
       if (data === "t" || data === "T") {
-        issueTypeValue = cycleIssueType(issueTypeValue)
+        taskTypeValue = cycleTaskType(taskTypeValue)
         renderLayout()
         return
       }

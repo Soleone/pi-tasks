@@ -1,4 +1,4 @@
-import type { IssueStatus } from "../models/issue.ts"
+import type { TaskStatus } from "../models/task.ts"
 
 export type FormFocus = "nav" | "title" | "desc"
 export type FormMode = "edit" | "create"
@@ -6,9 +6,9 @@ export type FormMode = "edit" | "create"
 export interface FormDraft {
   title: string
   description: string
-  status: IssueStatus
+  status: TaskStatus
   priority: number | undefined
-  issueType: string | undefined
+  taskType: string | undefined
 }
 
 type HeaderStatusColor = "dim" | "accent" | "warning"
@@ -39,7 +39,7 @@ export function isSameDraft(a: FormDraft, b: FormDraft): boolean {
     left.description === right.description &&
     left.status === right.status &&
     left.priority === right.priority &&
-    left.issueType === right.issueType
+    left.taskType === right.taskType
   )
 }
 

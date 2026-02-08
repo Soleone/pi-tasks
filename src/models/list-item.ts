@@ -1,10 +1,10 @@
-import { buildIssueListTextParts, type Issue } from "./issue.ts"
+import { buildTaskListTextParts, type Task } from "./task.ts"
 
-export interface IssueListRowOptions {
+export interface TaskListRowOptions {
   maxLabelWidth?: number
 }
 
-export interface IssueListRowModel {
+export interface TaskListRowModel {
   id: string
   label: string
   description: string
@@ -25,9 +25,9 @@ export function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*m/g, "")
 }
 
-export function buildListRowModel(issue: Issue, options: IssueListRowOptions = {}): IssueListRowModel {
+export function buildListRowModel(task: Task, options: TaskListRowOptions = {}): TaskListRowModel {
   const { maxLabelWidth } = options
-  const parts = buildIssueListTextParts(issue)
+  const parts = buildTaskListTextParts(task)
   const baseLabel = `${parts.identity} ${parts.title}`
   const visibleWidth = stripAnsi(baseLabel).length
 
@@ -37,7 +37,7 @@ export function buildListRowModel(issue: Issue, options: IssueListRowOptions = {
   }
 
   return {
-    id: issue.id,
+    id: task.id,
     label,
     description: encodeDescription(parts.meta, parts.summary),
   }

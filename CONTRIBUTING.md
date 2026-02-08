@@ -60,14 +60,34 @@ Use these text colors consistently, from strongest to weakest emphasis:
 - Keep selected task identity formatting shared via view-model helpers (avoid duplicate formatting logic).
 - Prefer extracting reusable rendering/formatting primitives over repeating inline style logic.
 
+## Task adapter quick guide
+
+To add a backend adapter, create one file in `src/backend/adapters/` with a **default export** that satisfies `TaskAdapterInitializer`.
+
+Required shape:
+
+- `id: string`
+- `isApplicable(): boolean` (detect if adapter should be used in current workspace)
+- `initialize(pi)` returning a `TaskAdapter` with:
+  - `statusCycle`
+  - `taskTypes`
+  - `list`, `show`, `update`, `create`
+
+Resolution behavior:
+
+1. `PI_TASKS_BACKEND` selects adapter by `id`
+2. otherwise the first adapter with `isApplicable() === true` is used
+3. if none apply, first loaded adapter is used as fallback
+
+Keep backend-specific field mapping inside adapter files only (e.g. beads `issue_type`), and keep app-level types in task-oriented camelCase.
+
 ## Implementation details
 
-- list modes for focused triage (`ready`, `open`, `all`)
 - stable list layout with aligned task identity/meta and fixed-height description preview
 - unified task form architecture for both Edit and Create pages
-- create flow that keeps editing context after initial save and updates the same issue on subsequent saves
+- create flow that keeps editing context after initial save and updates the same task on subsequent saves
 - keyboard-first interaction model with intent-based shortcuts and consistent list/show navigation behavior
 - mvc-like architecture: control flow designed for concise, maintainable extension code
 - inline header save feedback states with optional status icons
 - shared view-model formatting primitives to keep list/show/create rendering in sync
-- task reference serialization and work handoff prompt generation
+- task serialization and work handoff prompt generation

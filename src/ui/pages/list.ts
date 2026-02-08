@@ -1,6 +1,7 @@
 import { DynamicBorder, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
 import { Container, SelectList, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui"
-import type { Issue, IssueStatus } from "../../models/issue.ts"
+import type { Task, TaskStatus } from "../../models/task.ts"
+import type { TaskUpdate } from "../../backend/api.ts"
 import { DESCRIPTION_PART_SEPARATOR, buildListRowModel, decodeDescription, stripAnsi } from "../../models/list-item.ts"
 import { buildListPrimaryHelpText, buildListSecondaryHelpText, resolveListIntent } from "../../controllers/list.ts"
 import { KEYBOARD_HELP_PADDING_X, formatKeyboardHelp } from "../components/keyboard-help.ts"
@@ -11,19 +12,18 @@ const LIST_PAGE_CONTENT_MIN_HEIGHT = 20
 export interface ListPageConfig {
   title: string
   subtitle?: string
-  issues: Issue[]
+  tasks: Task[]
   allowPriority?: boolean
   allowSearch?: boolean
   filterTerm?: string
   ctrlQ: string
-  ctrlF: string
-  cycleStatus: (status: IssueStatus) => IssueStatus
-  cycleIssueType: (current: string | undefined) => string
-  onUpdateIssue: (id: string, args: string[]) => Promise<void>
-  onWork: (issue: Issue) => void
-  onReference: (issue: Issue) => void
-  onEdit: (id: string, issue: Issue | undefined) => Promise<{ updatedIssue: Issue | null; closeList: boolean }>
-  onCreate: () => Promise<Issue | null>
+  cycleStatus: (status: TaskStatus) => TaskStatus
+  cycleTaskType: (current: string | undefined) => string
+  onUpdateTask: (id: string, update: TaskUpdate) => Promise<void>
+  onWork: (task: Task) => void
+  onInsert: (task: Task) => void
+  onEdit: (id: string, task: Task | undefined) => Promise<{ updatedTask: Task | null; closeList: boolean }>
+  onCreate: () => Promise<Task | null>
 }
 
 function truncateDescription(desc: string | undefined, maxLines: number): string[] {
@@ -34,13 +34,13 @@ function truncateDescription(desc: string | undefined, maxLines: number): string
   return lines
 }
 
-function matchesFilter(issue: Issue, term: string): boolean {
+function matchesFilter(task: Task, term: string): boolean {
   const lower = term.toLowerCase()
   return (
-    issue.title.toLowerCase().includes(lower) ||
-    (issue.description ?? "").toLowerCase().includes(lower) ||
-    issue.id.toLowerCase().includes(lower) ||
-    issue.status.toLowerCase().includes(lower)
+    task.title.toLowerCase().includes(lower) ||
+    (task.description ?? "").toLowerCase().includes(lower) ||
+    task.id.toLowerCase().includes(lower) ||
+    task.status.toLowerCase().includes(lower)
   )
 }
 
@@ -59,17 +59,17 @@ function buildHeaderText(
   return `${theme.fg("muted", theme.bold(title))}${subtitlePart}`
 }
 
-export async function showIssueList(ctx: ExtensionCommandContext, config: ListPageConfig): Promise<void> {
-  const { title, subtitle, issues, allowPriority = true, allowSearch = true } = config
+export async function showTaskList(ctx: ExtensionCommandContext, config: ListPageConfig): Promise<void> {
+  const { title, subtitle, tasks, allowPriority = true, allowSearch = true } = config
 
-  const displayIssues = [...issues]
+  const displayTasks = [...tasks]
   let filterTerm = config.filterTerm || ""
   let rememberedSelectedId: string | undefined
 
   while (true) {
     const visible = filterTerm
-      ? displayIssues.filter(i => matchesFilter(i, filterTerm))
-      : displayIssues
+      ? displayTasks.filter(i => matchesFilter(i, filterTerm))
+      : displayTasks
 
     if (visible.length === 0 && filterTerm) {
       ctx.ui.notify(`No matches for "${filterTerm}"`, "warning")
@@ -77,7 +77,7 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
       continue
     }
 
-    const getMaxLabelWidth = () => Math.max(...displayIssues.map(i =>
+    const getMaxLabelWidth = () => Math.max(...displayTasks.map(i =>
       stripAnsi(buildListRowModel(i).label).length
     ))
 
@@ -119,11 +119,11 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
 
       const getItems = () => {
         const filtered = filterTerm
-          ? displayIssues.filter(i => matchesFilter(i, filterTerm))
-          : displayIssues
+          ? displayTasks.filter(i => matchesFilter(i, filterTerm))
+          : displayTasks
         const maxLabelWidth = getMaxLabelWidth()
-        return filtered.map((issue) => {
-          const row = buildListRowModel(issue, { maxLabelWidth })
+        return filtered.map((task) => {
+          const row = buildListRowModel(task, { maxLabelWidth })
           return {
             value: row.id,
             label: row.label,
@@ -254,15 +254,15 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
         }
 
         descScroll = 0
-        const issue = displayIssues.find(i => i.id === selected.value)
-        if (!issue) {
+        const task = displayTasks.find(i => i.id === selected.value)
+        if (!task) {
           previewTitleText.setText("")
           descTextComponent.setText(buildDescText([], lastWidth))
           return
         }
 
-        previewTitleText.setText(theme.fg("accent", theme.bold(issue.title)))
-        const descLines = truncateDescription(issue.description, 100)
+        previewTitleText.setText(theme.fg("accent", theme.bold(task.title)))
+        const descLines = truncateDescription(task.description, 100)
         descTextComponent.setText(buildDescText(descLines, lastWidth))
       }
       if (items[0]) updateDescPreview()
@@ -288,7 +288,6 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
           allowPriority,
           allowSearch,
           ctrlQ: config.ctrlQ,
-          ctrlF: config.ctrlF,
         })))
       }
       refreshDisplay()
@@ -305,17 +304,17 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
         tui.requestRender()
       }
 
-      const getSelectedIssue = (): Issue | undefined => {
+      const getSelectedTask = (): Task | undefined => {
         const selected = selectList.getSelectedItem()
         if (!selected) return undefined
         rememberedSelectedId = selected.value
-        return displayIssues.find(i => i.id === selected.value)
+        return displayTasks.find(i => i.id === selected.value)
       }
 
-      const withSelectedIssue = (run: (issue: Issue) => void): void => {
-        const issue = getSelectedIssue()
-        if (!issue) return
-        run(issue)
+      const withSelectedTask = (run: (task: Task) => void): void => {
+        const task = getSelectedTask()
+        if (!task) return
+        run(task)
       }
 
       const rebuildAndRender = () => {
@@ -379,7 +378,6 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
             allowSearch,
             allowPriority,
             ctrlQ: config.ctrlQ,
-            ctrlF: config.ctrlF,
           })
 
           switch (intent.type) {
@@ -429,40 +427,40 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
               return
 
             case "work":
-              withSelectedIssue((issue) => {
+              withSelectedTask((task) => {
                 done("cancel")
-                config.onWork(issue)
+                config.onWork(task)
               })
               return
 
             case "edit":
-              withSelectedIssue((issue) => {
-                selectedId = issue.id
+              withSelectedTask((task) => {
+                selectedId = task.id
                 done("select")
               })
               return
 
             case "toggleStatus":
-              withSelectedIssue((issue) => {
-                const newStatus = config.cycleStatus(issue.status)
-                issue.status = newStatus
-                void config.onUpdateIssue(issue.id, ["--status", newStatus])
+              withSelectedTask((task) => {
+                const newStatus = config.cycleStatus(task.status)
+                task.status = newStatus
+                void config.onUpdateTask(task.id, { status: newStatus })
                 rebuildAndRender()
               })
               return
 
             case "setPriority":
-              withSelectedIssue((issue) => {
-                if (issue.priority === intent.priority) return
-                issue.priority = intent.priority
-                void config.onUpdateIssue(issue.id, ["--priority", String(intent.priority)])
+              withSelectedTask((task) => {
+                if (task.priority === intent.priority) return
+                task.priority = intent.priority
+                void config.onUpdateTask(task.id, { priority: intent.priority })
                 rebuildAndRender()
               })
               return
 
             case "scrollDescription":
-              withSelectedIssue((issue) => {
-                const descLines = truncateDescription(issue.description, 100)
+              withSelectedTask((task) => {
+                const descLines = truncateDescription(task.description, 100)
                 const allWrapped: string[] = []
                 for (const line of descLines) {
                   const wrapped = wrapText(line, lastWidth, 100)
@@ -483,10 +481,10 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
               return
 
             case "toggleType":
-              withSelectedIssue((issue) => {
-                const newType = config.cycleIssueType(issue.issue_type)
-                issue.issue_type = newType
-                void config.onUpdateIssue(issue.id, ["--type", newType])
+              withSelectedTask((task) => {
+                const newType = config.cycleTaskType(task.taskType)
+                task.taskType = newType
+                void config.onUpdateTask(task.id, { taskType: newType })
                 rebuildAndRender()
               })
               return
@@ -495,10 +493,10 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
               done("create")
               return
 
-            case "reference":
-              withSelectedIssue((issue) => {
+            case "insert":
+              withSelectedTask((task) => {
                 done("cancel")
-                config.onReference(issue)
+                config.onInsert(task)
               })
               return
 
@@ -514,21 +512,21 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
     if (result === "cancel") return
 
     if (result === "create") {
-      const createdIssue = await config.onCreate()
-      if (createdIssue) {
-        displayIssues.unshift(createdIssue)
-        rememberedSelectedId = createdIssue.id
+      const createdTask = await config.onCreate()
+      if (createdTask) {
+        displayTasks.unshift(createdTask)
+        rememberedSelectedId = createdTask.id
       }
       continue
     }
 
     if (result === "select" && selectedId) {
       rememberedSelectedId = selectedId
-      const currentIssue = displayIssues.find(i => i.id === selectedId)
-      const editResult = await config.onEdit(selectedId, currentIssue)
-      if (editResult.updatedIssue) {
-        const idx = displayIssues.findIndex(i => i.id === selectedId)
-        if (idx !== -1) displayIssues[idx] = editResult.updatedIssue
+      const currentTask = displayTasks.find(i => i.id === selectedId)
+      const editResult = await config.onEdit(selectedId, currentTask)
+      if (editResult.updatedTask) {
+        const idx = displayTasks.findIndex(i => i.id === selectedId)
+        if (idx !== -1) displayTasks[idx] = editResult.updatedTask
       }
       if (editResult.closeList) return
     }

@@ -1,68 +1,12 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
-import type { Issue, IssueStatus } from "./models/issue.ts"
-import { buildWorkPrompt, serializeReference } from "./models/reference.ts"
-import { showIssueList } from "./ui/pages/list.ts"
-import { showIssueForm } from "./ui/pages/show.ts"
+import initializeAdapter from "./backend/resolver.ts"
+import type { Task, TaskStatus } from "./models/task.ts"
+import { buildTaskWorkPrompt, serializeTask } from "./lib/task-serialization.ts"
+import { showTaskList } from "./ui/pages/list.ts"
+import { showTaskForm } from "./ui/pages/show.ts"
+import type { TaskUpdate } from "./backend/api.ts"
 
-type ListMode = "ready" | "open" | "all"
-
-const MAX_LIST_RESULTS = 200
 const CTRL_Q = "\x11"
-const CTRL_F = "\x06"
-
-const MODE_SUBTITLES: Record<ListMode, string> = {
-  ready: "Ready",
-  open: "Open",
-  all: "All",
-}
-
-const LIST_MODE_ARGS: Record<ListMode, string[]> = {
-  ready: ["ready", "--limit", String(MAX_LIST_RESULTS), "--sort", "priority", "--json"],
-  open: ["list", "--sort", "priority", "--limit", String(MAX_LIST_RESULTS), "--json"],
-  all: ["list", "--all", "--sort", "priority", "--limit", String(MAX_LIST_RESULTS), "--json"],
-}
-
-const LIST_MODE_CONTEXT: Record<ListMode, string> = {
-  ready: "ready",
-  open: "list",
-  all: "list all",
-}
-
-const ARG_TO_LIST_MODE: Record<string, ListMode> = {
-  open: "open",
-  all: "all",
-}
-
-const CYCLE_STATUSES: IssueStatus[] = ["open", "in_progress", "closed"]
-const CYCLE_TYPES = ["task", "feature", "bug", "chore", "epic"] as const
-
-function isLikelyIssueId(value: string): boolean {
-  return /^[a-z0-9]+-[a-z0-9]+$/i.test(value)
-}
-
-function parseJsonArray<T>(stdout: string, context: string): T[] {
-  try {
-    const parsed = JSON.parse(stdout)
-    if (!Array.isArray(parsed)) throw new Error("expected JSON array")
-    return parsed as T[]
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(`Failed to parse bd output (${context}): ${msg}`)
-  }
-}
-
-function parseJsonObject<T>(stdout: string, context: string): T {
-  try {
-    const parsed = JSON.parse(stdout)
-    if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
-      throw new Error("expected JSON object")
-    }
-    return parsed as T
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(`Failed to parse bd output (${context}): ${msg}`)
-  }
-}
 
 function parsePriorityKey(data: string): number | null {
   if (data.length !== 1) return null
@@ -70,156 +14,180 @@ function parsePriorityKey(data: string): number | null {
   return !isNaN(num) && num >= 0 && num <= 4 ? num : null
 }
 
-function parseListMode(args: string): ListMode {
-  return ARG_TO_LIST_MODE[args] || "ready"
+function cycleStatus(current: TaskStatus, statusCycle: TaskStatus[]): TaskStatus {
+  if (statusCycle.length === 0) return "open"
+  const idx = statusCycle.indexOf(current)
+  if (idx === -1) return statusCycle[0]
+  return statusCycle[(idx + 1) % statusCycle.length]
 }
 
-function cycleStatus(current: IssueStatus): IssueStatus {
-  const idx = CYCLE_STATUSES.indexOf(current)
-  if (idx === -1) return "open"
-  return CYCLE_STATUSES[(idx + 1) % CYCLE_STATUSES.length]
+function cycleTaskType(current: string | undefined, taskTypes: string[]): string {
+  if (taskTypes.length === 0) return "task"
+  const normalized = current || taskTypes[0]
+  const idx = taskTypes.indexOf(normalized)
+  if (idx === -1) return taskTypes[0]
+  return taskTypes[(idx + 1) % taskTypes.length]
 }
 
-function cycleIssueType(current: string | undefined): string {
-  const normalized = current || "task"
-  const idx = CYCLE_TYPES.indexOf(normalized as (typeof CYCLE_TYPES)[number])
-  if (idx === -1) return CYCLE_TYPES[0]
-  return CYCLE_TYPES[(idx + 1) % CYCLE_TYPES.length]
-}
-
-interface EditIssueResult {
-  updatedIssue: Issue | null
+interface EditTaskResult {
+  updatedTask: Task | null
   closeList: boolean
 }
 
-function buildIssueUpdateArgs(previous: Issue, next: {
+function buildTaskUpdate(previous: Task, next: {
   title: string
   description: string
-  status: IssueStatus
+  status: TaskStatus
   priority: number | undefined
-  issueType: string | undefined
-}): string[] {
-  const args: string[] = []
+  taskType: string | undefined
+}): TaskUpdate {
+  const update: TaskUpdate = {}
 
   const nextTitle = next.title.trim()
   if (nextTitle !== previous.title.trim()) {
-    args.push("--title", nextTitle)
+    update.title = nextTitle
   }
 
   if (next.description !== (previous.description ?? "")) {
-    args.push("--description", next.description)
+    update.description = next.description
   }
 
   if (next.status !== previous.status) {
-    args.push("--status", next.status)
+    update.status = next.status
   }
 
-  if (next.priority !== previous.priority) {
-    args.push("--priority", String(next.priority))
+  if (next.priority !== previous.priority && next.priority !== undefined) {
+    update.priority = next.priority
   }
 
-  if (next.issueType !== previous.issue_type) {
-    args.push("--type", next.issueType || "task")
+  if (next.taskType !== previous.taskType) {
+    update.taskType = next.taskType || "task"
   }
 
-  return args
+  return update
+}
+
+function hasTaskUpdate(update: TaskUpdate): boolean {
+  return Object.keys(update).length > 0
+}
+
+function applyDraftToTask(
+  task: Task,
+  draft: {
+    title: string
+    description: string
+    status: TaskStatus
+    priority: number | undefined
+    taskType: string | undefined
+  },
+): Task {
+  const nextTask: Task = {
+    ...task,
+    title: draft.title.trim(),
+    description: draft.description,
+    status: draft.status,
+  }
+
+  if (draft.priority !== undefined) {
+    nextTask.priority = draft.priority
+  } else {
+    delete nextTask.priority
+  }
+
+  if (draft.taskType !== undefined) {
+    nextTask.taskType = draft.taskType
+  } else {
+    delete nextTask.taskType
+  }
+
+  return nextTask
 }
 
 export default function registerExtension(pi: ExtensionAPI) {
-  async function execBd(args: string[], timeout = 30_000): Promise<string> {
-    const result = await pi.exec("bd", args, { timeout })
-    if (result.code !== 0) {
-      const details = (result.stderr || result.stdout || "").trim()
-      throw new Error(details.length > 0 ? details : `bd ${args.join(" ")} failed (code ${result.code})`)
-    }
-    return result.stdout
+  const backend = initializeAdapter(pi)
+
+  const nextStatus = (status: TaskStatus): TaskStatus => cycleStatus(status, backend.statusCycle)
+  const nextTaskType = (current: string | undefined): string => cycleTaskType(current, backend.taskTypes)
+
+  async function listTasks(): Promise<Task[]> {
+    return backend.list()
   }
 
-  async function listIssues(mode: ListMode): Promise<Issue[]> {
-    const out = await execBd(LIST_MODE_ARGS[mode])
-    return parseJsonArray<Issue>(out, LIST_MODE_CONTEXT[mode])
+  async function showTask(id: string): Promise<Task> {
+    return backend.show(id)
   }
 
-  async function showIssue(id: string): Promise<Issue> {
-    const out = await execBd(["show", id, "--json"])
-    const issues = parseJsonArray<Issue>(out, `show ${id}`)
-    const issue = issues[0]
-    if (!issue) throw new Error(`Issue not found: ${id}`)
-    return issue
+  function needsTaskDetailsForEdit(task: Task): boolean {
+    return task.description === undefined
   }
 
-  function needsIssueDetailsForEdit(issue: Issue): boolean {
-    return issue.description === undefined
-  }
-
-  async function getIssueForEdit(id: string, fromList?: Issue): Promise<Issue> {
-    if (!fromList) return showIssue(id)
-    if (needsIssueDetailsForEdit(fromList)) return showIssue(id)
+  async function getTaskForEdit(id: string, fromList?: Task): Promise<Task> {
+    if (!fromList) return showTask(id)
+    if (needsTaskDetailsForEdit(fromList)) return showTask(id)
     return { ...fromList }
   }
 
-  async function updateIssue(id: string, args: string[]): Promise<void> {
-    await execBd(["update", id, ...args])
+  async function updateTask(id: string, update: TaskUpdate): Promise<void> {
+    await backend.update(id, update)
   }
 
-  async function editIssue(ctx: ExtensionCommandContext, id: string, fromList?: Issue): Promise<EditIssueResult> {
-    let issue = await getIssueForEdit(id, fromList)
+  async function editTask(ctx: ExtensionCommandContext, id: string, fromList?: Task): Promise<EditTaskResult> {
+    let task = await getTaskForEdit(id, fromList)
 
-    const formResult = await showIssueForm(ctx, {
+    const formResult = await showTaskForm(ctx, {
       mode: "edit",
       subtitle: "Edit",
-      issue,
+      task,
       ctrlQ: CTRL_Q,
-      cycleStatus,
-      cycleIssueType,
+      cycleStatus: nextStatus,
+      cycleTaskType: nextTaskType,
       parsePriorityKey,
       onSave: async (draft) => {
-        const updateArgs = buildIssueUpdateArgs(issue, {
+        const update = buildTaskUpdate(task, {
           title: draft.title,
           description: draft.description,
           status: draft.status,
           priority: draft.priority,
-          issueType: draft.issueType,
+          taskType: draft.taskType,
         })
 
-        if (updateArgs.length === 0) return false
+        if (!hasTaskUpdate(update)) return false
 
-        await updateIssue(id, updateArgs)
-        issue = {
-          ...issue,
-          title: draft.title.trim(),
+        await updateTask(id, update)
+        task = applyDraftToTask(task, {
+          title: draft.title,
           description: draft.description,
           status: draft.status,
           priority: draft.priority,
-          issue_type: draft.issueType,
-        }
+          taskType: draft.taskType,
+        })
         return true
       },
     })
 
     return {
-      updatedIssue: issue,
+      updatedTask: task,
       closeList: formResult.action === "close_list",
     }
   }
 
-  async function createIssue(ctx: ExtensionCommandContext): Promise<Issue | null> {
-    let createdIssue: Issue | null = null
+  async function createTask(ctx: ExtensionCommandContext): Promise<Task | null> {
+    let createdTask: Task | null = null
 
-    await showIssueForm(ctx, {
+    await showTaskForm(ctx, {
       mode: "create",
       subtitle: "Create",
-      issue: {
+      task: {
         id: "new",
         title: "",
         description: "",
         status: "open",
         priority: 2,
-        issue_type: "task",
+        taskType: "task",
       },
       ctrlQ: CTRL_Q,
-      cycleStatus,
-      cycleIssueType,
+      cycleStatus: nextStatus,
+      cycleTaskType: nextTaskType,
       parsePriorityKey,
       onSave: async (draft) => {
         const title = draft.title.trim()
@@ -227,86 +195,63 @@ export default function registerExtension(pi: ExtensionAPI) {
           throw new Error("Title is required")
         }
 
-        if (!createdIssue) {
-          const createArgs = [
-            "create",
-            "--title", title,
-            "--priority", String(draft.priority ?? 2),
-            "--type", draft.issueType || "task",
-            "--json",
-          ]
-
-          if (draft.description.length > 0) {
-            createArgs.splice(3, 0, "--description", draft.description)
-          }
-
-          const out = await execBd(createArgs)
-          const created = parseJsonObject<Issue>(out, "create")
-
-          if (draft.status !== "open" && created.id) {
-            await updateIssue(created.id, ["--status", draft.status])
-            created.status = draft.status
-          }
-
-          createdIssue = {
-            ...created,
+        if (!createdTask) {
+          createdTask = await backend.create({
             title,
             description: draft.description,
             status: draft.status,
             priority: draft.priority,
-            issue_type: draft.issueType,
-          }
+            taskType: draft.taskType,
+          })
           return true
         }
 
-        const updateArgs = buildIssueUpdateArgs(createdIssue, {
+        const update = buildTaskUpdate(createdTask, {
           title,
           description: draft.description,
           status: draft.status,
           priority: draft.priority,
-          issueType: draft.issueType,
+          taskType: draft.taskType,
         })
 
-        if (updateArgs.length === 0) return false
+        if (!hasTaskUpdate(update)) return false
 
-        await updateIssue(createdIssue.id, updateArgs)
-        createdIssue = {
-          ...createdIssue,
+        await updateTask(createdTask.id, update)
+        createdTask = applyDraftToTask(createdTask, {
           title,
           description: draft.description,
           status: draft.status,
           priority: draft.priority,
-          issue_type: draft.issueType,
-        }
+          taskType: draft.taskType,
+        })
         return true
       },
     })
 
-    return createdIssue
+    return createdTask
   }
 
-  async function browseIssues(ctx: ExtensionCommandContext, mode: ListMode): Promise<void> {
-    const modeTitle = "Tasks"
-    const modeSubtitle = MODE_SUBTITLES[mode]
+  async function browseTasks(ctx: ExtensionCommandContext): Promise<void> {
+    const pageTitle = "Tasks"
+    const backendLabel = backend.id
 
     try {
       ctx.ui.setStatus("tasks", "Loading…")
-      const issues = await listIssues(mode)
+      const tasks = await listTasks()
       ctx.ui.setStatus("tasks", undefined)
 
-      await showIssueList(ctx, {
-        title: modeTitle,
-        subtitle: modeSubtitle,
-        issues,
+      await showTaskList(ctx, {
+        title: pageTitle,
+        subtitle: backendLabel,
+        tasks,
         ctrlQ: CTRL_Q,
-        ctrlF: CTRL_F,
-        cycleStatus,
-        cycleIssueType,
-        onUpdateIssue: updateIssue,
-        onWork: (issue) => pi.sendUserMessage(buildWorkPrompt(issue)),
-        onReference: (issue) => ctx.ui.pasteToEditor(`${serializeReference(issue)} `),
-        onEdit: (id, issue) => editIssue(ctx, id, issue),
-        onCreate: () => createIssue(ctx),
+        cycleStatus: nextStatus,
+        cycleTaskType: nextTaskType,
+        onUpdateTask: updateTask,
+        onWork: (task) => pi.sendUserMessage(buildTaskWorkPrompt(task)),
+        onInsert: (task) => ctx.ui.pasteToEditor(`${serializeTask(task)} `),
+        onEdit: (id, task) => editTask(ctx, id, task),
+        onCreate: () => createTask(ctx),
       })
     } catch (e) {
       ctx.ui.setStatus("tasks", undefined)
@@ -315,19 +260,10 @@ export default function registerExtension(pi: ExtensionAPI) {
   }
 
   pi.registerCommand("tasks", {
-    description: "Browse and edit tasks",
-    handler: async (rawArgs, ctx) => {
+    description: "Open task list",
+    handler: async (_rawArgs, ctx) => {
       if (!ctx.hasUI) return
-      const args = (rawArgs || "").trim()
-      if (args.length > 0 && isLikelyIssueId(args)) {
-        try {
-          await editIssue(ctx, args)
-        } catch (e) {
-          ctx.ui.notify(e instanceof Error ? e.message : String(e), "error")
-        }
-        return
-      }
-      await browseIssues(ctx, parseListMode(args))
+      await browseTasks(ctx)
     },
   })
 
@@ -335,7 +271,7 @@ export default function registerExtension(pi: ExtensionAPI) {
     description: "Open task list",
     handler: async (ctx) => {
       if (!ctx.hasUI) return
-      await browseIssues(ctx as ExtensionCommandContext, "ready")
+      await browseTasks(ctx as ExtensionCommandContext)
     },
   })
 }
