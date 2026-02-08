@@ -91,7 +91,7 @@ function toTask(beadsIssue: BeadsIssue): Task {
   const task: Task = {
     id: beadsIssue.id,
     title: beadsIssue.title,
-    description: beadsIssue.description,
+    description: beadsIssue.description ?? "",
     status: fromBackendStatus(beadsIssue.status),
     owner: beadsIssue.owner,
     priority: toPriorityLabel(beadsIssue.priority),
