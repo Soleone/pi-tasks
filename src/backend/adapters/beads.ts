@@ -4,10 +4,17 @@ import { resolve } from "node:path"
 import type { Task } from "../../models/task.ts"
 import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskUpdate } from "../api.ts"
 
-const MAX_LIST_RESULTS = 200
+const MAX_LIST_RESULTS = 100
 const STATUS_CYCLE = ["open", "in_progress", "closed"] as const
 const TASK_TYPES = ["task", "feature", "bug", "chore", "epic"] as const
-const LIST_ARGS = ["ready", "--limit", String(MAX_LIST_RESULTS), "--sort", "priority", "--json"]
+const ACTIVE_TASK_LIST_ARGS = [
+  "list",
+  "--status", "open",
+  "--status", "in_progress",
+  "--limit", String(MAX_LIST_RESULTS),
+  "--sort", "priority",
+  "--json",
+]
 
 interface BeadsIssue {
   id: string
@@ -42,6 +49,31 @@ function toTask(beadsIssue: BeadsIssue): Task {
   if (beadsIssue.comment_count !== undefined) task.commentCount = beadsIssue.comment_count
 
   return task
+}
+
+function taskStatusSortRank(status: Task["status"]): number {
+  if (status === "in_progress") return 0
+  if (status === "open") return 1
+  return 2
+}
+
+function byTaskPriority(a: Task, b: Task): number {
+  if (a.priority === undefined && b.priority === undefined) return 0
+  if (a.priority === undefined) return 1
+  if (b.priority === undefined) return -1
+  return a.priority - b.priority
+}
+
+function sortActiveTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((left, right) => {
+    const statusOrder = taskStatusSortRank(left.status) - taskStatusSortRank(right.status)
+    if (statusOrder !== 0) return statusOrder
+
+    const priorityOrder = byTaskPriority(left, right)
+    if (priorityOrder !== 0) return priorityOrder
+
+    return left.id.localeCompare(right.id)
+  })
 }
 
 function fromTaskUpdateToBeadsArgs(update: TaskUpdate): string[] {
@@ -121,9 +153,9 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
     taskTypes: [...TASK_TYPES],
 
     async list(): Promise<Task[]> {
-      const out = await execBd(LIST_ARGS)
-      const beadsIssues = parseJsonArray<BeadsIssue>(out, "ready")
-      return beadsIssues.map(toTask)
+      const out = await execBd(ACTIVE_TASK_LIST_ARGS)
+      const beadsIssues = parseJsonArray<BeadsIssue>(out, "list active")
+      return sortActiveTasks(beadsIssues.map(toTask))
     },
 
     async show(id: string): Promise<Task> {
