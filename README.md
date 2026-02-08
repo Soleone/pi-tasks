@@ -1,22 +1,28 @@
-# @soleone/beads-pi
+# @soleone/pi-tasks
 
-Beads task management extension for the [pi coding agent](https://github.com/badlogic/pi-mono).
+Task management extension for the [pi coding agent](https://github.com/badlogic/pi-mono), designed for pluggable task backends.
 
-## Features
+## Quick start
 
-- `/beads` command to browse and manage Beads issues
-- list, edit, and create flows in a unified TUI
-- keyboard-first interactions for status, type, priority, filtering, and references
-- inline save feedback and stable list/show layout
+1. Installation: `pi install npm:@soleone/pi-tasks`
+2. Toggle the Tasks UI with `ctrl + q`, or use `/tasks`.
 
-## Package metadata
+## Usage
 
-This package is publish-ready as version `0.2.0` and exposes one pi extension entry point via:
+- Navigate up with `w` and `s` (arrows also work)
+- `space` to change status
+- `0` to `4` to change priority
+- `t` to change task type
+- `f` for keyword search (title, description)
+- `q` or `Esc` to go back
 
-```json
-{
-  "pi": {
-    "extensions": ["./index.ts"]
-  }
-}
-```
+### List view
+
+- `e` to edit a task
+- `Enter` to work off a task
+- `Tab` to insert task details in prompt and close Tasks UI
+
+### Edit view
+
+- `Tab` to switch focus between inputs
+- `Enter` to save

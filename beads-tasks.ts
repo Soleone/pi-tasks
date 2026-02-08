@@ -839,18 +839,18 @@ export default function beadsTasks(pi: ExtensionAPI) {
     const modeSubtitle = MODE_SUBTITLES[mode]
 
     try {
-      ctx.ui.setStatus("beads", "Loading…")
+      ctx.ui.setStatus("tasks", "Loading…")
       const issues = await listIssues(mode)
-      ctx.ui.setStatus("beads", undefined)
+      ctx.ui.setStatus("tasks", undefined)
       await showIssueList(ctx, { title: modeTitle, subtitle: modeSubtitle, issues })
     } catch (e) {
-      ctx.ui.setStatus("beads", undefined)
+      ctx.ui.setStatus("tasks", undefined)
       ctx.ui.notify(e instanceof Error ? e.message : String(e), "error")
     }
   }
 
-  pi.registerCommand("beads", {
-    description: "Browse and edit Beads issues",
+  pi.registerCommand("tasks", {
+    description: "Browse and edit tasks",
     handler: async (rawArgs, ctx) => {
       if (!ctx.hasUI) return
       const args = (rawArgs || "").trim()
@@ -867,7 +867,7 @@ export default function beadsTasks(pi: ExtensionAPI) {
   })
 
   pi.registerShortcut("ctrl+q", {
-    description: "Open Beads task list",
+    description: "Open task list",
     handler: async (ctx) => {
       if (!ctx.hasUI) return
       await browseIssues(ctx as ExtensionCommandContext, "ready")

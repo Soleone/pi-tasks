@@ -182,12 +182,12 @@ export function serializeIssueReference(issue: BdIssue): string {
     parts.push(`description="${description.replaceAll("\n", "\\n")}"`)
   }
 
-  return `beads_task(${parts.join(", ")})`
+  return `task(${parts.join(", ")})`
 }
 
 export function buildWorkPrompt(issue: BdIssue): string {
   const lines = [
-    `Work on Beads task ${issue.id}: ${issue.title}`,
+    `Work on task ${issue.id}: ${issue.title}`,
     "",
     `Status: ${issue.status}`,
     `Priority: ${issue.priority ?? "unknown"}`,

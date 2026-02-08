@@ -1,17 +1,17 @@
 {
-  "name": "@soleone/beads-pi",
+  "name": "@soleone/pi-tasks",
   "version": "0.2.0",
-  "description": "Beads task management extension for the pi coding agent",
+  "description": "Task management extension for the pi coding agent",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Soleone/beads-pi.git"
+    "url": "git+https://github.com/soleone/pi-tasks.git"
   },
   "bugs": {
-    "url": "https://github.com/Soleone/beads-pi/issues"
+    "url": "https://github.com/soleone/pi-tasks/issues"
   },
-  "homepage": "https://github.com/Soleone/beads-pi#readme",
+  "homepage": "https://github.com/soleone/pi-tasks#readme",
   "pi": {
     "extensions": [
       "./index.ts"
