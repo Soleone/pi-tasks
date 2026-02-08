@@ -25,6 +25,7 @@ export interface ListControllerState {
   allowPriority: boolean
   ctrlQ: string
   priorities: string[]
+  priorityHotkeys?: Record<string, string>
 }
 
 type ShortcutContext = "default" | "search"
@@ -37,35 +38,30 @@ interface ShortcutDefinition {
   intent: (data: string, state: ListControllerState) => ListIntent
 }
 
-function parsePriorityKey(data: string, priorities: string[]): string | null {
+function parsePriorityKey(
+  data: string,
+  priorities: string[],
+  priorityHotkeys?: Record<string, string>,
+): string | null {
   if (data.length !== 1) return null
 
-  const direct = priorities.find(priority => priority.toLowerCase() === data.toLowerCase())
-  if (direct) return direct
+  const hotkeyPriority = priorityHotkeys?.[data]
+  if (hotkeyPriority && priorities.includes(hotkeyPriority)) return hotkeyPriority
 
-  const prefixed = priorities.find(priority => {
-    const match = priority.toLowerCase().match(/^p(\d)$/)
-    return !!match && match[1] === data
-  })
-
-  return prefixed ?? null
+  const rank = parseInt(data, 10)
+  if (isNaN(rank) || rank < 1 || rank > priorities.length) return null
+  return priorities[rank - 1] ?? null
 }
 
-function buildPriorityHelpText(priorities: string[]): string {
-  const digits = priorities
-    .map(priority => priority.toLowerCase().match(/^p(\d)$/)?.[1])
-    .filter((value): value is string => value !== undefined)
-
-  if (digits.length === priorities.length && digits.length > 0) {
-    const numeric = digits.map(Number).sort((a, b) => a - b)
-    const isRange = numeric.every((value, index) => index === 0 || value === numeric[index - 1] + 1)
-    if (isRange && numeric.length > 1) {
-      return `${numeric[0]}-${numeric[numeric.length - 1]} priority`
-    }
-    return `${numeric.join("/")} priority`
+function buildPriorityHelpText(priorities: string[], priorityHotkeys?: Record<string, string>): string {
+  const hotkeyKeys = priorityHotkeys ? Object.keys(priorityHotkeys).sort((a, b) => a.localeCompare(b)) : []
+  if (hotkeyKeys.length > 0) {
+    return `${hotkeyKeys.join("/")} priority`
   }
 
-  return "priority"
+  if (priorities.length === 0) return "priority"
+  if (priorities.length === 1) return "1 priority"
+  return `1-${priorities.length} priority`
 }
 
 function isPrintable(data: string): boolean {
@@ -133,10 +129,13 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
-    help: (state) => buildPriorityHelpText(state.priorities),
+    help: (state) => buildPriorityHelpText(state.priorities, state.priorityHotkeys),
     showInHelp: (state) => state.allowPriority,
-    match: (data, state) => state.allowPriority && parsePriorityKey(data, state.priorities) !== null,
-    intent: (data, state) => ({ type: "setPriority", priority: parsePriorityKey(data, state.priorities) ?? state.priorities[0] ?? "" }),
+    match: (data, state) => state.allowPriority && parsePriorityKey(data, state.priorities, state.priorityHotkeys) !== null,
+    intent: (data, state) => ({
+      type: "setPriority",
+      priority: parsePriorityKey(data, state.priorities, state.priorityHotkeys) ?? state.priorities[0] ?? "",
+    }),
   },
   {
     context: "default",

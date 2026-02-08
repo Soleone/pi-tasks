@@ -72,6 +72,7 @@ Required shape:
   - `statusMap` (internal camelCase status -> backend status)
   - `taskTypes` (toggle order, first is default)
   - `priorities` (highest-first order, middle is default)
+  - optional `priorityHotkeys` (`key -> priority`, overrides default `1..N` rank hotkeys)
   - `list`, `show`, `update`, `create`
 
 Resolution behavior:

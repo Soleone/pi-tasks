@@ -12,10 +12,24 @@ const STATUS_MAP: TaskStatusMap = {
 }
 const TASK_TYPES = ["task", "feature", "bug", "chore", "epic"]
 const PRIORITIES = ["p0", "p1", "p2", "p3", "p4"]
+const PRIORITY_HOTKEYS: Record<string, string> = {
+  "0": "p0",
+  "1": "p1",
+  "2": "p2",
+  "3": "p3",
+  "4": "p4",
+}
 
-const ACTIVE_TASK_LIST_ARGS = [
+const OPEN_TASK_LIST_ARGS = [
   "list",
   "--status", STATUS_MAP.open,
+  "--limit", String(MAX_LIST_RESULTS),
+  "--sort", "priority",
+  "--json",
+]
+
+const IN_PROGRESS_TASK_LIST_ARGS = [
+  "list",
   "--status", STATUS_MAP.inProgress,
   "--limit", String(MAX_LIST_RESULTS),
   "--sort", "priority",
@@ -199,11 +213,23 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
     statusMap: STATUS_MAP,
     taskTypes: TASK_TYPES,
     priorities: PRIORITIES,
+    priorityHotkeys: PRIORITY_HOTKEYS,
 
     async list(): Promise<Task[]> {
-      const out = await execBd(ACTIVE_TASK_LIST_ARGS)
-      const beadsIssues = parseJsonArray<BeadsIssue>(out, "list active")
-      return sortActiveTasks(beadsIssues.map(toTask))
+      const [openOut, inProgressOut] = await Promise.all([
+        execBd(OPEN_TASK_LIST_ARGS),
+        execBd(IN_PROGRESS_TASK_LIST_ARGS),
+      ])
+
+      const openIssues = parseJsonArray<BeadsIssue>(openOut, "list open")
+      const inProgressIssues = parseJsonArray<BeadsIssue>(inProgressOut, "list in_progress")
+
+      const dedupedById = new Map<string, Task>()
+      for (const issue of [...inProgressIssues, ...openIssues]) {
+        dedupedById.set(issue.id, toTask(issue))
+      }
+
+      return sortActiveTasks([...dedupedById.values()]).slice(0, MAX_LIST_RESULTS)
     },
 
     async show(id: string): Promise<Task> {

@@ -8,18 +8,19 @@ import type { TaskUpdate } from "./backend/api.ts"
 
 const CTRL_Q = "\x11"
 
-function parsePriorityKey(data: string, priorities: string[]): string | null {
+function parsePriorityKey(
+  data: string,
+  priorities: string[],
+  priorityHotkeys?: Record<string, string>,
+): string | null {
   if (data.length !== 1) return null
 
-  const directMatch = priorities.find(priority => priority.toLowerCase() === data.toLowerCase())
-  if (directMatch) return directMatch
+  const hotkeyPriority = priorityHotkeys?.[data]
+  if (hotkeyPriority && priorities.includes(hotkeyPriority)) return hotkeyPriority
 
-  const prefixedMatch = priorities.find(priority => {
-    const match = priority.toLowerCase().match(/^p(\d)$/)
-    return !!match && match[1] === data
-  })
-
-  return prefixedMatch ?? null
+  const rank = parseInt(data, 10)
+  if (isNaN(rank) || rank < 1 || rank > priorities.length) return null
+  return priorities[rank - 1] ?? null
 }
 
 function cycleStatus(current: TaskStatus, statusMap: Record<string, string>): TaskStatus {
@@ -56,6 +57,7 @@ function validateBackendConfiguration(backend: {
   statusMap: Record<string, string>
   taskTypes: string[]
   priorities: string[]
+  priorityHotkeys?: Record<string, string>
 }): void {
   const statusKeys = Object.keys(backend.statusMap)
   if (statusKeys.length === 0) {
@@ -80,6 +82,18 @@ function validateBackendConfiguration(backend: {
 
   if (!hasUniqueValues(backend.priorities)) {
     throw new Error(`Invalid backend config (${backend.id}): priorities must be unique`)
+  }
+
+  if (backend.priorityHotkeys) {
+    for (const [key, priority] of Object.entries(backend.priorityHotkeys)) {
+      if (key.length !== 1) {
+        throw new Error(`Invalid backend config (${backend.id}): priority hotkey keys must be a single character`)
+      }
+
+      if (!backend.priorities.includes(priority)) {
+        throw new Error(`Invalid backend config (${backend.id}): priority hotkey ${key} points to unsupported priority ${priority}`)
+      }
+    }
   }
 }
 
@@ -163,7 +177,11 @@ export default function registerExtension(pi: ExtensionAPI) {
 
   const nextStatus = (status: TaskStatus): TaskStatus => cycleStatus(status, backend.statusMap)
   const nextTaskType = (current: string | undefined): string => cycleTaskType(current, backend.taskTypes)
-  const nextPriorityFromKey = (data: string): string | null => parsePriorityKey(data, backend.priorities)
+  const nextPriorityFromKey = (data: string): string | null => parsePriorityKey(
+    data,
+    backend.priorities,
+    backend.priorityHotkeys,
+  )
 
   async function listTasks(): Promise<Task[]> {
     return backend.list()
@@ -199,6 +217,7 @@ export default function registerExtension(pi: ExtensionAPI) {
       cycleTaskType: nextTaskType,
       parsePriorityKey: nextPriorityFromKey,
       priorities: backend.priorities,
+      priorityHotkeys: backend.priorityHotkeys,
       onSave: async (draft) => {
         const update = buildTaskUpdate(task, {
           title: draft.title,
@@ -247,6 +266,7 @@ export default function registerExtension(pi: ExtensionAPI) {
       cycleTaskType: nextTaskType,
       parsePriorityKey: nextPriorityFromKey,
       priorities: backend.priorities,
+      priorityHotkeys: backend.priorityHotkeys,
       onSave: async (draft) => {
         const title = draft.title.trim()
         if (title.length === 0) {
@@ -304,6 +324,7 @@ export default function registerExtension(pi: ExtensionAPI) {
         tasks,
         ctrlQ: CTRL_Q,
         priorities: backend.priorities,
+        priorityHotkeys: backend.priorityHotkeys,
         cycleStatus: nextStatus,
         cycleTaskType: nextTaskType,
         onUpdateTask: updateTask,

@@ -60,24 +60,22 @@ export function buildPrimaryHelpText(focus: FormFocus): string {
   return "tab title • enter save • esc/q back • ctrl+q close"
 }
 
-function buildPriorityHelpText(priorities: string[]): string {
-  const digits = priorities
-    .map(priority => priority.toLowerCase().match(/^p(\d)$/)?.[1])
-    .filter((value): value is string => value !== undefined)
-
-  if (digits.length === priorities.length && digits.length > 0) {
-    const numeric = digits.map(Number).sort((a, b) => a - b)
-    const isRange = numeric.every((value, index) => index === 0 || value === numeric[index - 1] + 1)
-    if (isRange && numeric.length > 1) {
-      return `${numeric[0]}-${numeric[numeric.length - 1]} priority`
-    }
-    return `${numeric.join("/")} priority`
+function buildPriorityHelpText(priorities: string[], priorityHotkeys?: Record<string, string>): string {
+  const hotkeyKeys = priorityHotkeys ? Object.keys(priorityHotkeys).sort((a, b) => a.localeCompare(b)) : []
+  if (hotkeyKeys.length > 0) {
+    return `${hotkeyKeys.join("/")} priority`
   }
 
-  return "priority"
+  if (priorities.length === 0) return "priority"
+  if (priorities.length === 1) return "1 priority"
+  return `1-${priorities.length} priority`
 }
 
-export function buildSecondaryHelpText(focus: FormFocus, priorities: string[]): string {
+export function buildSecondaryHelpText(
+  focus: FormFocus,
+  priorities: string[],
+  priorityHotkeys?: Record<string, string>,
+): string {
   if (focus !== "nav") return ""
-  return `space status • ${buildPriorityHelpText(priorities)} • t type`
+  return `space status • ${buildPriorityHelpText(priorities, priorityHotkeys)} • t type`
 }

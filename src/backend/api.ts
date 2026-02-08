@@ -25,6 +25,7 @@ export interface TaskAdapter {
   readonly statusMap: TaskStatusMap
   readonly taskTypes: string[]
   readonly priorities: string[]
+  readonly priorityHotkeys?: Record<string, string>
   list(): Promise<Task[]>
   show(id: string): Promise<Task>
   update(id: string, update: TaskUpdate): Promise<void>

@@ -17,6 +17,7 @@ export interface ListPageConfig {
   allowSearch?: boolean
   filterTerm?: string
   priorities: string[]
+  priorityHotkeys?: Record<string, string>
   ctrlQ: string
   cycleStatus: (status: TaskStatus) => TaskStatus
   cycleTaskType: (current: string | undefined) => string
@@ -290,6 +291,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
           allowSearch,
           ctrlQ: config.ctrlQ,
           priorities: config.priorities,
+          priorityHotkeys: config.priorityHotkeys,
         })))
       }
       refreshDisplay()
@@ -381,6 +383,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
             allowPriority,
             ctrlQ: config.ctrlQ,
             priorities: config.priorities,
+            priorityHotkeys: config.priorityHotkeys,
           })
 
           switch (intent.type) {
