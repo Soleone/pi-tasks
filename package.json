@@ -14,26 +14,22 @@
   "homepage": "https://github.com/soleone/pi-tasks#readme",
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./src/index.ts"
     ]
   },
   "exports": {
-    ".": "./index.ts"
+    ".": "./src/index.ts"
   },
   "files": [
-    "index.ts",
-    "beads-list-controller.ts",
-    "beads-task-view-model.ts",
-    "beads-tasks.ts",
-    "components",
+    "src",
     "README.md",
     "CONTRIBUTING.md",
     "LICENSE"
   ],
   "keywords": [
     "pi",
-    "beads",
     "tasks",
+    "task-management",
     "tui"
   ],
   "publishConfig": {

@@ -1,17 +1,20 @@
-import { Container, Key, Spacer, Text, matchesKey, truncateToWidth, visibleWidth, type Component } from "@mariozechner/pi-tui"
 import { DynamicBorder, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
+import { Container, Key, Spacer, Text, matchesKey, truncateToWidth, visibleWidth, type Component } from "@mariozechner/pi-tui"
 import {
-  buildIssueIdentityText,
-  buildIssueListTextParts,
-  formatIssueTypeCode,
-  type BdIssue,
-  type IssueStatus,
-} from "../beads-task-view-model.ts"
-import { BlurEditorField } from "./blur-editor-field.ts"
-import { MinHeightContainer } from "./min-height-container.ts"
-import { formatKeyboardHelp, KEYBOARD_HELP_PADDING_X } from "./keyboard-help-style.ts"
-
-export type IssueFormFocus = "nav" | "title" | "desc"
+  buildPrimaryHelpText,
+  buildSecondaryHelpText,
+  getHeaderStatus,
+  isSameDraft,
+  normalizeDraft,
+  type FormDraft,
+  type FormFocus,
+  type FormMode,
+  type HeaderStatus,
+} from "../../controllers/show.ts"
+import { buildIssueIdentityText, buildIssueListTextParts, formatIssueTypeCode, type Issue, type IssueStatus } from "../../models/issue.ts"
+import { BlurEditorField } from "../components/blur-editor.ts"
+import { KEYBOARD_HELP_PADDING_X, formatKeyboardHelp } from "../components/keyboard-help.ts"
+import { MinHeightContainer } from "../components/min-height.ts"
 
 export type IssueFormAction = "back" | "close_list"
 
@@ -19,71 +22,18 @@ export interface IssueFormResult {
   action: IssueFormAction
 }
 
-interface IssueFormDraft {
-  title: string
-  description: string
-  status: IssueStatus
-  priority: number | undefined
-  issueType: string | undefined
-}
-
-function normalizeDraft(draft: IssueFormDraft): IssueFormDraft {
-  return {
-    ...draft,
-    title: draft.title.trim(),
-  }
-}
-
-function isSameDraft(a: IssueFormDraft, b: IssueFormDraft): boolean {
-  const left = normalizeDraft(a)
-  const right = normalizeDraft(b)
-  return (
-    left.title === right.title &&
-    left.description === right.description &&
-    left.status === right.status &&
-    left.priority === right.priority &&
-    left.issueType === right.issueType
-  )
-}
-
-type TaskFormMode = "edit" | "create"
-
 interface ShowIssueFormOptions {
-  mode: TaskFormMode
+  mode: FormMode
   subtitle: string
-  issue: BdIssue
+  issue: Issue
   ctrlQ: string
   cycleStatus: (status: IssueStatus) => IssueStatus
   cycleIssueType: (issueType: string | undefined) => string
   parsePriorityKey: (data: string) => number | null
-  onSave: (draft: IssueFormDraft) => Promise<boolean>
+  onSave: (draft: FormDraft) => Promise<boolean>
 }
 
-type HeaderStatusColor = "dim" | "accent" | "warning"
-
-interface HeaderStatusViewModel {
-  message: string
-  icon?: string
-  color: HeaderStatusColor
-}
-
-const FOCUS_LABELS: Record<Exclude<IssueFormFocus, "nav">, string> = {
-  title: "Title",
-  desc: "Description",
-}
-
-function getHeaderStatus(
-  saveIndicator: "saving" | "saved" | "error" | undefined,
-  focus: IssueFormFocus,
-): HeaderStatusViewModel | undefined {
-  if (saveIndicator === "saving") return { message: "Saving…", icon: "⟳", color: "dim" }
-  if (saveIndicator === "saved") return { message: "Saved", icon: "✓", color: "accent" }
-  if (saveIndicator === "error") return { message: "Save failed", color: "warning" }
-  if (focus === "title" || focus === "desc") return { message: `Editing ${FOCUS_LABELS[focus].toLowerCase()}`, color: "accent" }
-  return undefined
-}
-
-function buildPageTitle(theme: any, subtitle: string, status?: HeaderStatusViewModel): string {
+function buildPageTitle(theme: any, subtitle: string, status?: HeaderStatus): string {
   const base = `${theme.fg("muted", theme.bold("Tasks"))}${theme.fg("dim", ` • ${subtitle}`)}`
   if (!status) return base
 
@@ -92,7 +42,7 @@ function buildPageTitle(theme: any, subtitle: string, status?: HeaderStatusViewM
 }
 
 function buildSelectedTaskLine(
-  mode: TaskFormMode,
+  mode: FormMode,
   theme: any,
   rowIdentity: string,
   rowMeta: string,
@@ -110,17 +60,6 @@ function buildSelectedTaskLine(
 function fieldLabel(theme: any, label: string, focused: boolean): string {
   const color = focused ? "accent" : "muted"
   return theme.fg(color, theme.bold(`  ${label}`))
-}
-
-function buildPrimaryHelpText(focus: IssueFormFocus): string {
-  if (focus === "title") return "enter save • tab description • esc back"
-  if (focus === "desc") return "enter newline • tab save • esc back"
-  return "tab title • enter save • esc/q back • ctrl+q close"
-}
-
-function buildSecondaryHelpText(focus: IssueFormFocus): string {
-  if (focus !== "nav") return ""
-  return "space status • 0-4 priority • t type"
 }
 
 const SELECTED_ITEM_PREFIX = "› "
@@ -229,7 +168,7 @@ export async function showIssueForm(ctx: ExtensionCommandContext, options: ShowI
     const helpText = new ReservedLineText(KEYBOARD_HELP_PADDING_X)
     const shortcutsText = new ReservedLineText(KEYBOARD_HELP_PADDING_X)
 
-    let focus: IssueFormFocus = mode === "create" ? "title" : "nav"
+    let focus: FormFocus = mode === "create" ? "title" : "nav"
     let saveIndicator: "saving" | "saved" | "error" | undefined
     let saveIndicatorTimer: ReturnType<typeof setTimeout> | undefined
     let saving = false
@@ -276,7 +215,7 @@ export async function showIssueForm(ctx: ExtensionCommandContext, options: ShowI
       descValue = text
     }
 
-    const currentDraft = (): IssueFormDraft => ({
+    const currentDraft = (): FormDraft => ({
       title: titleValue,
       description: descValue,
       status: statusValue,
@@ -284,7 +223,7 @@ export async function showIssueForm(ctx: ExtensionCommandContext, options: ShowI
       issueType: issueTypeValue,
     })
 
-    let lastSavedDraft: IssueFormDraft = currentDraft()
+    let lastSavedDraft: FormDraft = currentDraft()
 
     const triggerSave = async () => {
       if (saving || disposed) return
