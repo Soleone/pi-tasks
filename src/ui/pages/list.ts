@@ -62,11 +62,6 @@ function buildHeaderText(
 export async function showIssueList(ctx: ExtensionCommandContext, config: ListPageConfig): Promise<void> {
   const { title, subtitle, issues, allowPriority = true, allowSearch = true } = config
 
-  if (issues.length === 0) {
-    ctx.ui.notify("No issues found", "info")
-    return
-  }
-
   const displayIssues = [...issues]
   let filterTerm = config.filterTerm || ""
   let rememberedSelectedId: string | undefined
@@ -76,7 +71,7 @@ export async function showIssueList(ctx: ExtensionCommandContext, config: ListPa
       ? displayIssues.filter(i => matchesFilter(i, filterTerm))
       : displayIssues
 
-    if (visible.length === 0) {
+    if (visible.length === 0 && filterTerm) {
       ctx.ui.notify(`No matches for "${filterTerm}"`, "warning")
       filterTerm = ""
       continue
