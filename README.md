@@ -2,6 +2,8 @@
 
 Task management extension for the [pi coding agent](https://github.com/badlogic/pi-mono), designed for pluggable task backends.
 
+<img width="2373" height="1305" alt="image" src="https://github.com/user-attachments/assets/af210b63-f993-447d-9668-3308874d493c" />
+
 ## Quick start
 
 1. Installation: `pi install npm:@soleone/pi-tasks`
