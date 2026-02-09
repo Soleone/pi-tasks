@@ -5,11 +5,11 @@ import type { Task, TaskStatus } from "../../models/task.ts"
 import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskStatusMap, TaskUpdate } from "../api.ts"
 
 const MAX_LIST_RESULTS = 100
-const STATUS_MAP: TaskStatusMap = {
+const STATUS_MAP = {
   open: "open",
   inProgress: "in_progress",
   closed: "closed",
-}
+} satisfies TaskStatusMap
 const TASK_TYPES = ["task", "feature", "bug", "chore", "epic"]
 const PRIORITIES = ["p0", "p1", "p2", "p3", "p4"]
 const PRIORITY_HOTKEYS: Record<string, string> = {
@@ -89,6 +89,7 @@ function toBackendStatus(status: TaskStatus): string {
 
 function toTask(beadsIssue: BeadsIssue): Task {
   const task: Task = {
+    ref: beadsIssue.id,
     id: beadsIssue.id,
     title: beadsIssue.title,
     description: beadsIssue.description ?? "",
@@ -129,7 +130,7 @@ function sortActiveTasks(tasks: Task[]): Task[] {
     const priorityOrder = taskPrioritySortRank(left.priority) - taskPrioritySortRank(right.priority)
     if (priorityOrder !== 0) return priorityOrder
 
-    return left.id.localeCompare(right.id)
+    return left.ref.localeCompare(right.ref)
   })
 }
 
@@ -201,11 +202,11 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
     return result.stdout
   }
 
-  async function update(id: string, update: TaskUpdate): Promise<void> {
+  async function update(ref: string, update: TaskUpdate): Promise<void> {
     const args = fromTaskUpdateToBeadsArgs(update)
     if (args.length === 0) return
 
-    await execBd(["update", id, ...args])
+    await execBd(["update", ref, ...args])
   }
 
   return {
@@ -232,11 +233,11 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
       return sortActiveTasks([...dedupedById.values()]).slice(0, MAX_LIST_RESULTS)
     },
 
-    async show(id: string): Promise<Task> {
-      const out = await execBd(["show", id, "--json"])
-      const beadsIssues = parseJsonArray<BeadsIssue>(out, `show ${id}`)
+    async show(ref: string): Promise<Task> {
+      const out = await execBd(["show", ref, "--json"])
+      const beadsIssues = parseJsonArray<BeadsIssue>(out, `show ${ref}`)
       const task = beadsIssues[0]
-      if (!task) throw new Error(`Task not found: ${id}`)
+      if (!task) throw new Error(`Task not found: ${ref}`)
       return toTask(task)
     },
 
@@ -266,7 +267,7 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
       const created = toTask(parseJsonObject<BeadsIssue>(out, "create"))
 
       if (status !== "open") {
-        await update(created.id, { status })
+        await update(created.ref, { status })
         created.status = status
       }
 
