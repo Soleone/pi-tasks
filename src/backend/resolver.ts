@@ -75,6 +75,9 @@ function lookup(): TaskAdapterInitializer {
   const detected = ADAPTER_INITIALIZERS.find(adapter => adapter.isApplicable())
   if (detected) return detected
 
+  const fallback = ADAPTER_INITIALIZERS.find(adapter => adapter.id === "todo-md")
+  if (fallback) return fallback
+
   return ADAPTER_INITIALIZERS[0]
 }
 
