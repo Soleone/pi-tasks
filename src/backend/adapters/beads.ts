@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent"
+import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import type { Task, TaskStatus } from "../../models/task.ts"
@@ -189,7 +190,13 @@ function parseJsonObject<T>(stdout: string, context: string): T {
 }
 
 function isApplicable(): boolean {
-  return existsSync(resolve(process.cwd(), ".beads"))
+  if (!existsSync(resolve(process.cwd(), ".beads"))) return false
+
+  const result = spawnSync("bd", ["--version"], {
+    stdio: "ignore",
+  })
+
+  return !result.error
 }
 
 function initialize(pi: ExtensionAPI): TaskAdapter {
