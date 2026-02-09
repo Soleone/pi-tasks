@@ -402,7 +402,7 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
           return
         }
 
-        if (focus !== "nav" && (matchesKey(data, Key.escape) || matchesKey(data, Key.left))) {
+        if (focus !== "nav" && matchesKey(data, Key.escape)) {
           focus = "nav"
           renderLayout()
           return
