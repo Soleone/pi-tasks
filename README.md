@@ -39,7 +39,7 @@ Currently supported values:
 
 ### TODO.md backend
 
-The `todo-md` backend reads/writes a markdown task file (default: `TODO.md` in the current workspace).
+The `todo-md` backend reads/writes a markdown task file (default: `TODO.md`; if `todo.md` already exists, it is used).
 
 Optional env var:
 

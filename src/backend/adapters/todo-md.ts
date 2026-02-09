@@ -6,10 +6,11 @@ import { dirname, resolve } from "node:path"
 import type { Task, TaskStatus } from "../../models/task.ts"
 import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskStatusMap, TaskUpdate } from "../api.ts"
 
-const DEFAULT_TODO_FILE = "TODO.md"
+const DEFAULT_TODO_FILES = ["TODO.md", "todo.md"] as const
 const TODO_FILE_ENV = "PI_TASKS_TODO_PATH"
 const SECTION_ORDER = ["now", "next", "later", "archive"] as const
 const OPEN_PRIORITIES = ["now", "next", "later"] as const
+const DEFAULT_TODO_TITLE = "TODO"
 
 const STATUS_MAP = {
   open: "open",
@@ -28,12 +29,17 @@ interface TodoTaskRecord {
 }
 
 interface TodoDocument {
+  title: string
+  format: "structured" | "flat"
   tasks: TodoTaskRecord[]
 }
 
 function configuredTodoPath(): string {
   const fromEnv = process.env[TODO_FILE_ENV]?.trim()
-  return fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_TODO_FILE
+  if (fromEnv && fromEnv.length > 0) return fromEnv
+
+  const existingDefault = DEFAULT_TODO_FILES.find(file => existsSync(resolve(process.cwd(), file)))
+  return existingDefault ?? DEFAULT_TODO_FILES[0]
 }
 
 function resolveTodoPath(): string {
@@ -52,13 +58,13 @@ function headingToSection(line: string): TodoSection | null {
 }
 
 function parseTaskLine(line: string): { checked: boolean; title: string; inlineDescription: string } | null {
-  const match = line.match(/^\s*-\s*\[( |x|X)\]\s*\*\*(.+?)\*\*(?:\s*[—-]\s*(.+))?\s*$/)
+  const match = line.match(/^\s*-\s*\[( |x|X)\]\s*(?:\*\*(.+?)\*\*|(.+?))(?:\s*[—-]\s*(.+))?\s*$/)
   if (!match) return null
 
   return {
     checked: match[1]!.toLowerCase() === "x",
-    title: match[2]!.trim(),
-    inlineDescription: (match[3] ?? "").trim(),
+    title: (match[2] ?? match[3] ?? "").trim(),
+    inlineDescription: (match[4] ?? "").trim(),
   }
 }
 
@@ -102,8 +108,16 @@ function assignTaskRefs(tasks: Omit<TodoTaskRecord, "ref">[]): TodoTaskRecord[] 
   })
 }
 
-function parseTodoDocument(content: string): TodoDocument {
-  const lines = content.split(/\r?\n/)
+function extractTitle(lines: string[]): string {
+  const heading = lines.find(line => /^#\s+/.test(line.trim()))
+  if (!heading) return DEFAULT_TODO_TITLE
+  return heading.replace(/^#\s+/, "").trim() || DEFAULT_TODO_TITLE
+}
+
+function parseChecklistTasks(
+  lines: string[],
+  resolvePriority: (section: TodoSection | null) => TodoPriority | undefined,
+): Omit<TodoTaskRecord, "ref">[] {
   const parsedTasks: Omit<TodoTaskRecord, "ref">[] = []
 
   let section: TodoSection | null = null
@@ -112,7 +126,7 @@ function parseTodoDocument(content: string): TodoDocument {
     title: string
     inlineDescription: string
     bullets: string[]
-    section: TodoSection
+    section: TodoSection | null
   } | null = null
 
   const flushActiveTask = () => {
@@ -126,7 +140,7 @@ function parseTodoDocument(content: string): TodoDocument {
       title: activeTask.title,
       description,
       status: activeTask.checked ? "closed" : "open",
-      priority: sectionToPriority(activeTask.section),
+      priority: activeTask.checked ? undefined : resolvePriority(activeTask.section),
     })
 
     activeTask = null
@@ -139,8 +153,6 @@ function parseTodoDocument(content: string): TodoDocument {
       section = nextSection
       continue
     }
-
-    if (!section) continue
 
     const taskLine = parseTaskLine(line)
     if (taskLine) {
@@ -168,7 +180,29 @@ function parseTodoDocument(content: string): TodoDocument {
 
   flushActiveTask()
 
-  return { tasks: assignTaskRefs(parsedTasks) }
+  return parsedTasks
+}
+
+function parseTodoDocument(content: string): TodoDocument {
+  const lines = content.split(/\r?\n/)
+  const title = extractTitle(lines)
+  const hasStructuredSections = lines.some(line => headingToSection(line) !== null)
+
+  if (hasStructuredSections) {
+    const tasks = parseChecklistTasks(lines, section => sectionToPriority(section ?? "now") ?? "now")
+    return {
+      title,
+      format: "structured",
+      tasks: assignTaskRefs(tasks),
+    }
+  }
+
+  const tasks = parseChecklistTasks(lines, () => "now")
+  return {
+    title,
+    format: "flat",
+    tasks: assignTaskRefs(tasks),
+  }
 }
 
 function asBulletLines(description: string): string[] {
@@ -203,7 +237,7 @@ function taskToMarkdownLine(task: TodoTaskRecord): string[] {
   return lines
 }
 
-function renderTodoDocument(document: TodoDocument): string {
+function renderStructuredDocument(document: TodoDocument): string {
   const sectionTasks: Record<TodoSection, TodoTaskRecord[]> = {
     now: [],
     next: [],
@@ -217,11 +251,11 @@ function renderTodoDocument(document: TodoDocument): string {
       continue
     }
 
-    const priority = task.priority ?? "next"
+    const priority = task.priority ?? "now"
     sectionTasks[priority].push(task)
   }
 
-  const lines: string[] = ["# TODO", ""]
+  const lines: string[] = [`# ${document.title}`, ""]
 
   const sectionTitleById: Record<TodoSection, string> = {
     now: "Now",
@@ -242,6 +276,36 @@ function renderTodoDocument(document: TodoDocument): string {
   }
 
   return `${lines.join("\n").trimEnd()}\n`
+}
+
+function renderFlatDocument(document: TodoDocument): string {
+  const lines: string[] = [`# ${document.title}`, ""]
+
+  const openTasks = document.tasks.filter(task => task.status === "open")
+  for (const task of openTasks) {
+    lines.push(...taskToMarkdownLine(task))
+  }
+
+  const archivedTasks = document.tasks.filter(task => task.status === "closed")
+  if (archivedTasks.length > 0) {
+    lines.push("", "## Archive", "")
+    for (const task of archivedTasks) {
+      lines.push(...taskToMarkdownLine(task))
+    }
+  }
+
+  lines.push("")
+  return `${lines.join("\n").trimEnd()}\n`
+}
+
+function renderTodoDocument(document: TodoDocument): string {
+  const shouldUseStructured = document.format === "structured" || document.tasks.some(task => (
+    task.status === "open" && task.priority !== undefined && task.priority !== "now"
+  ))
+
+  return shouldUseStructured
+    ? renderStructuredDocument(document)
+    : renderFlatDocument(document)
 }
 
 function normalizePriority(priority: string | undefined): TodoPriority | undefined {
@@ -280,7 +344,7 @@ function applyTaskUpdate(task: TodoTaskRecord, update: TaskUpdate): TodoTaskReco
     title: nextTitle,
     description: nextDescription,
     status: nextStatus,
-    priority: nextStatus === "closed" ? undefined : (nextPriority ?? "next"),
+    priority: nextStatus === "closed" ? undefined : (nextPriority ?? "now"),
   }
 }
 
@@ -290,7 +354,7 @@ async function readDocument(filePath: string): Promise<TodoDocument> {
     return parseTodoDocument(content)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { tasks: [] }
+      return { title: DEFAULT_TODO_TITLE, format: "structured", tasks: [] }
     }
     throw error
   }
@@ -351,7 +415,7 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
       const updatedTasks = [...document.tasks]
       updatedTasks[index] = applyTaskUpdate(updatedTasks[index]!, update)
 
-      await persistDocument({ tasks: updatedTasks })
+      await persistDocument({ ...document, tasks: updatedTasks })
     },
 
     async create(input: CreateTaskInput): Promise<Task> {
@@ -366,10 +430,10 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
         status,
         priority: status === "closed"
           ? undefined
-          : (normalizePriority(input.priority) ?? "next"),
+          : (normalizePriority(input.priority) ?? "now"),
       }
 
-      await persistDocument({ tasks: [...document.tasks, createdTask] })
+      await persistDocument({ ...document, tasks: [...document.tasks, createdTask] })
       return toTask(createdTask)
     },
   }
