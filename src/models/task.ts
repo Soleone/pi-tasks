@@ -1,7 +1,8 @@
 export type TaskStatus = "open" | "inProgress" | "blocked" | "deferred" | "closed"
 
 export interface Task {
-  id: string
+  ref: string
+  id?: string
   title: string
   description?: string
   status: TaskStatus
@@ -17,7 +18,7 @@ export interface Task {
 }
 
 interface TaskListElements {
-  id: string
+  id?: string
   title: string
   status: string
   type: string
@@ -90,7 +91,7 @@ function firstLine(text: string | undefined): string | undefined {
 
 function buildTaskListElements(task: Task): TaskListElements {
   return {
-    id: stripIdPrefix(task.id),
+    id: task.id ? stripIdPrefix(task.id) : undefined,
     title: task.title,
     status: formatTaskStatusSymbol(task.status),
     type: formatTaskTypeCode(task.taskType),
@@ -98,7 +99,8 @@ function buildTaskListElements(task: Task): TaskListElements {
   }
 }
 
-export function buildTaskIdentityText(priority: string | undefined, idText: string): string {
+export function buildTaskIdentityText(priority: string | undefined, idText?: string): string {
+  if (!idText) return formatTaskPriority(priority)
   const mutedId = `${MUTED_TEXT}${idText}${ANSI_RESET}`
   return `${formatTaskPriority(priority)} ${mutedId}`
 }

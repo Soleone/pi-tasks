@@ -64,8 +64,8 @@ function validateBackendConfiguration(backend: {
     throw new Error(`Invalid backend config (${backend.id}): statusMap must not be empty`)
   }
 
-  if (!statusKeys.includes("open") || !statusKeys.includes("inProgress") || !statusKeys.includes("closed")) {
-    throw new Error(`Invalid backend config (${backend.id}): statusMap must include open, inProgress, closed`)
+  if (!statusKeys.includes("open") || !statusKeys.includes("closed")) {
+    throw new Error(`Invalid backend config (${backend.id}): statusMap must include open and closed`)
   }
 
   if (backend.taskTypes.length === 0) {
@@ -187,26 +187,26 @@ export default function registerExtension(pi: ExtensionAPI) {
     return backend.list()
   }
 
-  async function showTask(id: string): Promise<Task> {
-    return backend.show(id)
+  async function showTask(ref: string): Promise<Task> {
+    return backend.show(ref)
   }
 
   function needsTaskDetailsForEdit(task: Task): boolean {
     return task.description === undefined
   }
 
-  async function getTaskForEdit(id: string, fromList?: Task): Promise<Task> {
-    if (!fromList) return showTask(id)
-    if (needsTaskDetailsForEdit(fromList)) return showTask(id)
+  async function getTaskForEdit(ref: string, fromList?: Task): Promise<Task> {
+    if (!fromList) return showTask(ref)
+    if (needsTaskDetailsForEdit(fromList)) return showTask(ref)
     return { ...fromList }
   }
 
-  async function updateTask(id: string, update: TaskUpdate): Promise<void> {
-    await backend.update(id, update)
+  async function updateTask(ref: string, update: TaskUpdate): Promise<void> {
+    await backend.update(ref, update)
   }
 
-  async function editTask(ctx: ExtensionCommandContext, id: string, fromList?: Task): Promise<EditTaskResult> {
-    let task = await getTaskForEdit(id, fromList)
+  async function editTask(ctx: ExtensionCommandContext, ref: string, fromList?: Task): Promise<EditTaskResult> {
+    let task = await getTaskForEdit(ref, fromList)
 
     const formResult = await showTaskForm(ctx, {
       mode: "edit",
@@ -229,7 +229,7 @@ export default function registerExtension(pi: ExtensionAPI) {
 
         if (!hasTaskUpdate(update)) return false
 
-        await updateTask(id, update)
+        await updateTask(ref, update)
         task = applyDraftToTask(task, {
           title: draft.title,
           description: draft.description,
@@ -254,7 +254,7 @@ export default function registerExtension(pi: ExtensionAPI) {
       mode: "create",
       subtitle: "Create",
       task: {
-        id: "new",
+        ref: "new",
         title: "",
         description: "",
         status: "open",
@@ -294,7 +294,7 @@ export default function registerExtension(pi: ExtensionAPI) {
 
         if (!hasTaskUpdate(update)) return false
 
-        await updateTask(createdTask.id, update)
+        await updateTask(createdTask.ref, update)
         createdTask = applyDraftToTask(createdTask, {
           title,
           description: draft.description,
@@ -314,6 +314,7 @@ export default function registerExtension(pi: ExtensionAPI) {
     const backendLabel = backend.id
 
     try {
+      backend.invalidateCache?.()
       ctx.ui.setStatus("tasks", "Loading…")
       const tasks = await listTasks()
       ctx.ui.setStatus("tasks", undefined)
@@ -330,7 +331,7 @@ export default function registerExtension(pi: ExtensionAPI) {
         onUpdateTask: updateTask,
         onWork: (task) => pi.sendUserMessage(buildTaskWorkPrompt(task)),
         onInsert: (task) => ctx.ui.pasteToEditor(`${serializeTask(task)} `),
-        onEdit: (id, task) => editTask(ctx, id, task),
+        onEdit: (ref, task) => editTask(ctx, ref, task),
         onCreate: () => createTask(ctx),
       })
     } catch (e) {

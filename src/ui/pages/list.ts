@@ -21,10 +21,10 @@ export interface ListPageConfig {
   ctrlQ: string
   cycleStatus: (status: TaskStatus) => TaskStatus
   cycleTaskType: (current: string | undefined) => string
-  onUpdateTask: (id: string, update: TaskUpdate) => Promise<void>
+  onUpdateTask: (ref: string, update: TaskUpdate) => Promise<void>
   onWork: (task: Task) => void
   onInsert: (task: Task) => void
-  onEdit: (id: string, task: Task | undefined) => Promise<{ updatedTask: Task | null; closeList: boolean }>
+  onEdit: (ref: string, task: Task | undefined) => Promise<{ updatedTask: Task | null; closeList: boolean }>
   onCreate: () => Promise<Task | null>
 }
 
@@ -41,7 +41,7 @@ function matchesFilter(task: Task, term: string): boolean {
   return (
     task.title.toLowerCase().includes(lower) ||
     (task.description ?? "").toLowerCase().includes(lower) ||
-    task.id.toLowerCase().includes(lower) ||
+    (task.id ?? "").toLowerCase().includes(lower) ||
     toKebabCase(task.status).includes(lower)
   )
 }
@@ -66,7 +66,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
 
   const displayTasks = [...tasks]
   let filterTerm = config.filterTerm || ""
-  let rememberedSelectedId: string | undefined
+  let rememberedSelectedRef: string | undefined
 
   while (true) {
     const visible = filterTerm
@@ -83,7 +83,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       stripAnsi(buildListRowModel(i).label).length
     ))
 
-    let selectedId: string | undefined
+    let selectedRef: string | undefined
     const result = await ctx.ui.custom<"cancel" | "select" | "create">((tui: any, theme: any, _kb: any, done: any) => {
       const container = new Container()
       let searching = false
@@ -127,7 +127,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         return filtered.map((task) => {
           const row = buildListRowModel(task, { maxLabelWidth })
           return {
-            value: row.id,
+            value: row.ref,
             label: row.label,
             description: row.description,
           }
@@ -143,22 +143,22 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         noMatch: (t: string) => theme.fg("warning", t),
       })
 
-      if (rememberedSelectedId) {
-        const rememberedIndex = items.findIndex(i => i.value === rememberedSelectedId)
+      if (rememberedSelectedRef) {
+        const rememberedIndex = items.findIndex(i => i.value === rememberedSelectedRef)
         if (rememberedIndex >= 0) selectList.setSelectedIndex(rememberedIndex)
       }
 
       selectList.onSelectionChange = () => {
         const selected = selectList.getSelectedItem()
-        if (selected) rememberedSelectedId = selected.value
+        if (selected) rememberedSelectedRef = selected.value
         updateDescPreview()
         tui.requestRender()
       }
       selectList.onSelect = () => {
         const sel = selectList.getSelectedItem()
         if (sel) {
-          selectedId = sel.value
-          rememberedSelectedId = sel.value
+          selectedRef = sel.value
+          rememberedSelectedRef = sel.value
         }
         done("select")
       }
@@ -256,7 +256,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         }
 
         descScroll = 0
-        const task = displayTasks.find(i => i.id === selected.value)
+        const task = displayTasks.find(i => i.ref === selected.value)
         if (!task) {
           previewTitleText.setText("")
           descTextComponent.setText(buildDescText([], lastWidth))
@@ -311,8 +311,8 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       const getSelectedTask = (): Task | undefined => {
         const selected = selectList.getSelectedItem()
         if (!selected) return undefined
-        rememberedSelectedId = selected.value
-        return displayTasks.find(i => i.id === selected.value)
+        rememberedSelectedRef = selected.value
+        return displayTasks.find(i => i.ref === selected.value)
       }
 
       const withSelectedTask = (run: (task: Task) => void): void => {
@@ -335,15 +335,15 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
 
         selectList.onSelectionChange = () => {
           const selected = selectList.getSelectedItem()
-          if (selected) rememberedSelectedId = selected.value
+          if (selected) rememberedSelectedRef = selected.value
           updateDescPreview()
           tui.requestRender()
         }
         selectList.onSelect = () => {
           const sel = selectList.getSelectedItem()
           if (sel) {
-            selectedId = sel.value
-            rememberedSelectedId = sel.value
+            selectedRef = sel.value
+            rememberedSelectedRef = sel.value
           }
           done("select")
         }
@@ -441,7 +441,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
 
             case "edit":
               withSelectedTask((task) => {
-                selectedId = task.id
+                selectedRef = task.ref
                 done("select")
               })
               return
@@ -450,7 +450,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
               withSelectedTask((task) => {
                 const newStatus = config.cycleStatus(task.status)
                 task.status = newStatus
-                void config.onUpdateTask(task.id, { status: newStatus })
+                void config.onUpdateTask(task.ref, { status: newStatus })
                 rebuildAndRender()
               })
               return
@@ -459,7 +459,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
               withSelectedTask((task) => {
                 if (task.priority === intent.priority) return
                 task.priority = intent.priority
-                void config.onUpdateTask(task.id, { priority: intent.priority })
+                void config.onUpdateTask(task.ref, { priority: intent.priority })
                 rebuildAndRender()
               })
               return
@@ -490,7 +490,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
               withSelectedTask((task) => {
                 const newType = config.cycleTaskType(task.taskType)
                 task.taskType = newType
-                void config.onUpdateTask(task.id, { taskType: newType })
+                void config.onUpdateTask(task.ref, { taskType: newType })
                 rebuildAndRender()
               })
               return
@@ -521,17 +521,17 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       const createdTask = await config.onCreate()
       if (createdTask) {
         displayTasks.unshift(createdTask)
-        rememberedSelectedId = createdTask.id
+        rememberedSelectedRef = createdTask.ref
       }
       continue
     }
 
-    if (result === "select" && selectedId) {
-      rememberedSelectedId = selectedId
-      const currentTask = displayTasks.find(i => i.id === selectedId)
-      const editResult = await config.onEdit(selectedId, currentTask)
+    if (result === "select" && selectedRef) {
+      rememberedSelectedRef = selectedRef
+      const currentTask = displayTasks.find(i => i.ref === selectedRef)
+      const editResult = await config.onEdit(selectedRef, currentTask)
       if (editResult.updatedTask) {
-        const idx = displayTasks.findIndex(i => i.id === selectedId)
+        const idx = displayTasks.findIndex(i => i.ref === selectedRef)
         if (idx !== -1) displayTasks[idx] = editResult.updatedTask
       }
       if (editResult.closeList) return

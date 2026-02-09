@@ -5,7 +5,7 @@ export interface TaskListRowOptions {
 }
 
 export interface TaskListRowModel {
-  id: string
+  ref: string
   label: string
   description: string
 }
@@ -37,7 +37,7 @@ export function buildListRowModel(task: Task, options: TaskListRowOptions = {}):
   }
 
   return {
-    id: task.id,
+    ref: task.ref,
     label,
     description: encodeDescription(parts.meta, parts.summary),
   }

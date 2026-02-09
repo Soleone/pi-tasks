@@ -3,8 +3,8 @@ import type { Task, TaskStatus } from "../models/task.ts"
 
 export type TaskStatusMap = {
   open: string
-  inProgress: string
   closed: string
+  inProgress?: string
 } & Partial<Record<Exclude<TaskStatus, "open" | "inProgress" | "closed">, string>>
 
 export interface TaskUpdate {
@@ -26,9 +26,10 @@ export interface TaskAdapter {
   readonly taskTypes: string[]
   readonly priorities: string[]
   readonly priorityHotkeys?: Record<string, string>
+  invalidateCache?(): void
   list(): Promise<Task[]>
-  show(id: string): Promise<Task>
-  update(id: string, update: TaskUpdate): Promise<void>
+  show(ref: string): Promise<Task>
+  update(ref: string, update: TaskUpdate): Promise<void>
   create(input: CreateTaskInput): Promise<Task>
 }
 
