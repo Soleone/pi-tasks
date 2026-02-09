@@ -23,6 +23,7 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 - `e` to edit a task
 - `Enter` to work off a task
 - `Tab` to insert task details in prompt and close Tasks UI
+- `c` to create a new task
 
 ### Edit view
 
