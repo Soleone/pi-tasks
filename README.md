@@ -35,3 +35,12 @@ Set `PI_TASKS_BACKEND` to explicitly choose a backend implementation.
 Currently supported values:
 
 - `beads`
+- `todo-md`
+
+### TODO.md backend
+
+The `todo-md` backend reads/writes a markdown task file (default: `TODO.md` in the current workspace).
+
+Optional env var:
+
+- `PI_TASKS_TODO_PATH` — override the TODO file path
