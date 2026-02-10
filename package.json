@@ -32,7 +32,15 @@
     "task-management",
     "tui"
   ],
+  "scripts": {
+    "release": "release-it",
+    "release:dry": "release-it --dry-run"
+  },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@release-it/conventional-changelog": "^10.0.5",
+    "release-it": "^19.2.4"
   }
 }
