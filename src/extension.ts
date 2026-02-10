@@ -6,7 +6,7 @@ import { showTaskList } from "./ui/pages/list.ts"
 import { showTaskForm } from "./ui/pages/show.ts"
 import type { TaskUpdate } from "./backend/api.ts"
 
-const CTRL_Q = "\x11"
+const CTRL_X = "\x18"
 
 function parsePriorityKey(
   data: string,
@@ -212,7 +212,7 @@ export default function registerExtension(pi: ExtensionAPI) {
       mode: "edit",
       subtitle: "Edit",
       task,
-      ctrlQ: CTRL_Q,
+      closeKey: CTRL_X,
       cycleStatus: nextStatus,
       cycleTaskType: nextTaskType,
       parsePriorityKey: nextPriorityFromKey,
@@ -261,7 +261,7 @@ export default function registerExtension(pi: ExtensionAPI) {
         priority: defaultPriority(backend.priorities),
         taskType: defaultTaskType(backend.taskTypes),
       },
-      ctrlQ: CTRL_Q,
+      closeKey: CTRL_X,
       cycleStatus: nextStatus,
       cycleTaskType: nextTaskType,
       parsePriorityKey: nextPriorityFromKey,
@@ -323,7 +323,7 @@ export default function registerExtension(pi: ExtensionAPI) {
         title: pageTitle,
         subtitle: backendLabel,
         tasks,
-        ctrlQ: CTRL_Q,
+        closeKey: CTRL_X,
         priorities: backend.priorities,
         priorityHotkeys: backend.priorityHotkeys,
         cycleStatus: nextStatus,

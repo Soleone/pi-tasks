@@ -26,7 +26,7 @@ interface ShowTaskFormOptions {
   mode: FormMode
   subtitle: string
   task: Task
-  ctrlQ: string
+  closeKey: string
   cycleStatus: (status: TaskStatus) => TaskStatus
   cycleTaskType: (taskType: string | undefined) => string
   parsePriorityKey: (data: string) => string | null
@@ -144,7 +144,7 @@ class ReservedLineText implements Component {
 }
 
 export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTaskFormOptions): Promise<TaskFormResult> {
-  const { mode, subtitle, task, ctrlQ, cycleStatus, cycleTaskType, parsePriorityKey, priorities, priorityHotkeys, onSave } = options
+  const { mode, subtitle, task, closeKey, cycleStatus, cycleTaskType, parsePriorityKey, priorities, priorityHotkeys, onSave } = options
 
   let taskTypeValue = task.taskType
   let titleValue = task.title
@@ -397,7 +397,7 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
         if (saveIndicatorTimer) clearTimeout(saveIndicatorTimer)
       },
       handleInput: (data: string) => {
-        if (data === ctrlQ) {
+        if (data === closeKey) {
           done({ action: "close_list" })
           return
         }

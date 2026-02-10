@@ -23,7 +23,7 @@ export interface ListControllerState {
   filtered: boolean
   allowSearch: boolean
   allowPriority: boolean
-  ctrlQ: string
+  closeKey: string
   priorities: string[]
   priorityHotkeys?: Record<string, string>
 }
@@ -83,7 +83,7 @@ const SCROLL_KEYS: Record<string, number> = {
 const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   {
     context: "search",
-    match: (data, state) => data === state.ctrlQ,
+    match: (data, state) => data === state.closeKey,
     intent: () => ({ type: "cancel" }),
   },
   {
@@ -174,7 +174,7 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
-    match: (data, state) => data === state.ctrlQ,
+    match: (data, state) => data === state.closeKey,
     intent: () => ({ type: "cancel" }),
   },
 ]

@@ -18,7 +18,7 @@ export interface ListPageConfig {
   filterTerm?: string
   priorities: string[]
   priorityHotkeys?: Record<string, string>
-  ctrlQ: string
+  closeKey: string
   cycleStatus: (status: TaskStatus) => TaskStatus
   cycleTaskType: (current: string | undefined) => string
   onUpdateTask: (ref: string, update: TaskUpdate) => Promise<void>
@@ -289,7 +289,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
           filtered: !!filterTerm,
           allowPriority,
           allowSearch,
-          ctrlQ: config.ctrlQ,
+          closeKey: config.closeKey,
           priorities: config.priorities,
           priorityHotkeys: config.priorityHotkeys,
         })))
@@ -381,7 +381,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
             filtered: !!filterTerm,
             allowSearch,
             allowPriority,
-            ctrlQ: config.ctrlQ,
+            closeKey: config.closeKey,
             priorities: config.priorities,
             priorityHotkeys: config.priorityHotkeys,
           })
