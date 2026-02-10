@@ -348,7 +348,7 @@ export default function registerExtension(pi: ExtensionAPI) {
     },
   })
 
-  pi.registerShortcut("ctrl+q", {
+  pi.registerShortcut("ctrl+x", {
     description: "Open task list",
     handler: async (ctx) => {
       if (!ctx.hasUI) return

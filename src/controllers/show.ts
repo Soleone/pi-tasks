@@ -57,7 +57,7 @@ export function getHeaderStatus(
 export function buildPrimaryHelpText(focus: FormFocus): string {
   if (focus === "title") return "enter save • tab description • esc back"
   if (focus === "desc") return "enter newline • tab save • esc back"
-  return "tab title • enter save • esc/q back • ctrl+q close"
+  return "tab title • enter save • esc/q back • ctrl+x close"
 }
 
 function buildPriorityHelpText(priorities: string[], priorityHotkeys?: Record<string, string>): string {

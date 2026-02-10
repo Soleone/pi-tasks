@@ -7,7 +7,7 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 ## Quick start
 
 1. Installation: `pi install npm:@soleone/pi-tasks`
-2. Toggle the Tasks UI with `ctrl + q`, or use `/tasks`.
+2. Toggle the Tasks UI with `ctrl + x`, or use `/tasks`.
 
 ## Usage
 
