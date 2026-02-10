@@ -21,3 +21,18 @@ Key commands:
 - `bd close <id> -r "reason" --json` -- close a completed task
 - `bd create "title" -t task --json` -- create a new task
 - `bd sync` -- sync issues to git before ending a session
+
+When closing a beads task, use a conventional commit so it appears in the changelog (e.g. `fix:`, `feat:`, `refactor:`).
+
+## Releasing
+
+Uses `release-it` with `@release-it/conventional-changelog` to auto-generate `CHANGELOG.md` from conventional commits.
+
+```bash
+npm run release:dry -- patch    # preview a patch release
+npm run release -- patch        # 0.2.0 → 0.2.1
+npm run release -- minor        # 0.2.0 → 0.3.0
+npm run release                 # interactive prompt to pick version
+```
+
+Omitting the version argument gives an interactive picker. Always dry-run first.
