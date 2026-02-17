@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0](https://github.com/Soleone/pi-tasks/compare/v0.2.2...v0.3.0) (2026-02-17)
+
+### Features
+
+* **ui:** add select list component with configurable value/description columns ([be58dc5](https://github.com/Soleone/pi-tasks/commit/be58dc5eb89777e8c1f9c59de22b6b49841bda96))
+
 ## [0.2.2](https://github.com/soleone/pi-tasks/compare/v0.2.1...v0.2.2) (2026-02-10)
 
 ### Bug Fixes
