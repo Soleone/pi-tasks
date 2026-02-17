@@ -1,13 +1,18 @@
 import { DynamicBorder, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
-import { Container, SelectList, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui"
+import { Container, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui"
 import { toKebabCase, type Task, type TaskStatus } from "../../models/task.ts"
 import type { TaskUpdate } from "../../backend/api.ts"
 import { DESCRIPTION_PART_SEPARATOR, buildListRowModel, decodeDescription, stripAnsi } from "../../models/list-item.ts"
 import { buildListPrimaryHelpText, buildListSecondaryHelpText, resolveListIntent } from "../../controllers/list.ts"
 import { KEYBOARD_HELP_PADDING_X, formatKeyboardHelp } from "../components/keyboard-help.ts"
 import { MinHeightContainer } from "../components/min-height.ts"
+import { SelectListWithColumns } from "../components/select-list-with-columns.ts"
 
 const LIST_PAGE_CONTENT_MIN_HEIGHT = 20
+const TASK_LIST_ROW_LAYOUT = {
+  valueMaxWidth: 60,
+  valueColumnWidth: 62,
+}
 
 export interface ListPageConfig {
   title: string
@@ -134,14 +139,16 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         })
       }
 
-      let items = getItems()
-      let selectList = new SelectList(items, Math.min(items.length, 10), {
+      const selectListTheme = {
         selectedPrefix: (t: string) => theme.fg("accent", t),
         selectedText: (t: string) => applyAccentWithAnsi(t),
         description: (t: string) => styleDescription(t),
         scrollInfo: (t: string) => theme.fg("dim", t),
         noMatch: (t: string) => theme.fg("warning", t),
-      })
+      }
+
+      let items = getItems()
+      let selectList = new SelectListWithColumns(items, Math.min(items.length, 10), selectListTheme, TASK_LIST_ROW_LAYOUT)
 
       if (rememberedSelectedRef) {
         const rememberedIndex = items.findIndex(i => i.value === rememberedSelectedRef)
@@ -165,13 +172,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       selectList.onCancel = () => {
         if (filterTerm) {
           filterTerm = ""
-          items = getItems()
-          selectList = new SelectList(items, Math.min(items.length, 10), selectList.theme)
-          selectList.onSelectionChange = selectList.onSelectionChange
-          selectList.onSelect = selectList.onSelect
-          selectList.onCancel = selectList.onCancel
-          container.invalidate()
-          tui.requestRender()
+          rebuildAndRender()
         } else {
           done("cancel")
         }
@@ -325,13 +326,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         items = getItems()
         const prevSelected = selectList.getSelectedItem()
 
-        selectList = new SelectList(items, Math.min(items.length, 10), {
-          selectedPrefix: (t: string) => theme.fg("accent", t),
-          selectedText: (t: string) => applyAccentWithAnsi(t),
-          description: (t: string) => styleDescription(t),
-          scrollInfo: (t: string) => theme.fg("dim", t),
-          noMatch: (t: string) => theme.fg("warning", t),
-        })
+        selectList = new SelectListWithColumns(items, Math.min(items.length, 10), selectListTheme, TASK_LIST_ROW_LAYOUT)
 
         selectList.onSelectionChange = () => {
           const selected = selectList.getSelectedItem()
