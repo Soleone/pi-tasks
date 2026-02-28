@@ -68,9 +68,19 @@ const SELECTED_ITEM_PREFIX = "› "
 const DESCRIPTION_FIELD_HEIGHT = 8
 const PAGE_CONTENT_MIN_HEIGHT = 19
 const SHIFT_TAB_SEQUENCE = /^\x1b\[[0-9;]*Z$/
+const SHIFT_ENTER_FALLBACK_SEQUENCE = /^\x1b\[13;2~$/
 
 function isShiftTab(data: string): boolean {
   return SHIFT_TAB_SEQUENCE.test(data)
+}
+
+function isExplicitNewLineCommand(data: string): boolean {
+  return (
+    matchesKey(data, Key.shift("enter")) ||
+    data === "\n" ||
+    data === "\x1b\r" ||
+    SHIFT_ENTER_FALLBACK_SEQUENCE.test(data)
+  )
 }
 
 class FixedHeightField implements Component {
@@ -347,10 +357,7 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
     }
 
     const handleDescInput = (data: string) => {
-      const ctrlEnter = matchesKey(data, Key.ctrl("enter"))
-      const shiftEnter = matchesKey(data, Key.shift("enter")) && data !== "\n"
-
-      if (ctrlEnter || shiftEnter) {
+      if (isExplicitNewLineCommand(data)) {
         descEditor.insertTextAtCursor("\n")
         requestRender()
         return
@@ -362,7 +369,7 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
         return
       }
 
-      if (matchesKey(data, Key.enter) || data === "\n" || matchesKey(data, Key.tab)) {
+      if (matchesKey(data, Key.enter) || matchesKey(data, Key.tab)) {
         focus = "nav"
         void triggerSave()
         renderLayout()
