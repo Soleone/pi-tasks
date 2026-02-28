@@ -61,12 +61,17 @@ function buildSelectedTaskLine(
 
 function fieldLabel(theme: any, label: string, focused: boolean): string {
   const color = focused ? "accent" : "muted"
-  return theme.fg(color, theme.bold(`  ${label}`))
+  return theme.fg(color, theme.bold(label))
 }
 
 const SELECTED_ITEM_PREFIX = "› "
 const DESCRIPTION_FIELD_HEIGHT = 8
 const PAGE_CONTENT_MIN_HEIGHT = 19
+const SHIFT_TAB_SEQUENCE = /^\x1b\[[0-9;]*Z$/
+
+function isShiftTab(data: string): boolean {
+  return SHIFT_TAB_SEQUENCE.test(data)
+}
 
 class FixedHeightField implements Component {
   constructor(private child: Component, private height: number) {}
@@ -190,8 +195,8 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
     const titleEditor = new BlurEditorField(tui, editorTheme, {
       stripTopBorder: true,
       blurredBorderColor: (s: string) => theme.fg("muted", s),
-      paddingX: 2,
-      indentX: 2,
+      paddingX: 0,
+      focusedCursorColor: (s: string) => theme.fg("accent", s),
     })
     titleEditor.setText(titleValue)
     titleEditor.disableSubmit = true
@@ -207,8 +212,8 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
     const descEditor = new BlurEditorField(tui, editorTheme, {
       stripTopBorder: true,
       blurredBorderColor: (s: string) => theme.fg("muted", s),
-      paddingX: 2,
-      indentX: 2,
+      paddingX: 0,
+      focusedCursorColor: (s: string) => theme.fg("accent", s),
     })
     const descEditorField = new FixedHeightField(descEditor, DESCRIPTION_FIELD_HEIGHT)
     descEditor.setText(descValue)
@@ -325,6 +330,12 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
         return
       }
 
+      if (isShiftTab(data)) {
+        focus = "nav"
+        renderLayout()
+        return
+      }
+
       if (matchesKey(data, Key.tab)) {
         focus = "desc"
         renderLayout()
@@ -342,6 +353,12 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
       if (ctrlEnter || shiftEnter) {
         descEditor.insertTextAtCursor("\n")
         requestRender()
+        return
+      }
+
+      if (isShiftTab(data)) {
+        focus = "title"
+        renderLayout()
         return
       }
 
