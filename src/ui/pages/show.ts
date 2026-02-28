@@ -336,13 +336,16 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
     }
 
     const handleDescInput = (data: string) => {
-      if (matchesKey(data, Key.enter)) {
+      const ctrlEnter = matchesKey(data, Key.ctrl("enter"))
+      const shiftEnter = matchesKey(data, Key.shift("enter")) && data !== "\n"
+
+      if (ctrlEnter || shiftEnter) {
         descEditor.insertTextAtCursor("\n")
         requestRender()
         return
       }
 
-      if (matchesKey(data, Key.tab)) {
+      if (matchesKey(data, Key.enter) || data === "\n" || matchesKey(data, Key.tab)) {
         focus = "nav"
         void triggerSave()
         renderLayout()
