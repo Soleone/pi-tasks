@@ -14,13 +14,14 @@
   "homepage": "https://github.com/soleone/pi-tasks#readme",
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./index.ts"
   },
   "files": [
+    "index.ts",
     "src",
     "README.md",
     "CONTRIBUTING.md",
