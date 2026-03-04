@@ -38,7 +38,21 @@ Set `PI_TASKS_BACKEND` to explicitly choose a backend implementation.
 Currently supported values:
 
 - `beads`
+- `sq`
 - `todo-md`
+
+### Sift Queue (`sq`) backend
+
+The `sq` backend integrates with [sift-queue](https://github.com/shopify-playground/sift) and reads/writes queue items through the `sq` CLI.
+
+Implementation notes:
+- `priority`, `taskType`, and `dueAt` are stored in item metadata
+- editable task description uses the native `description` field
+- if an item has `blocked_by`, it is displayed as `blocked`
+
+It detects `.sift` by default. You can override the queue file path:
+
+- `PI_TASKS_SQ_QUEUE_PATH` — path to a specific queue JSONL file (passed to `sq --queue`)
 
 ### TODO.md backend
 
