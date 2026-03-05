@@ -43,14 +43,9 @@ Currently supported values:
 
 ### Sift Queue (`sq`) backend
 
-The `sq` backend integrates with [sift-queue](https://github.com/shopify-playground/sift) and reads/writes queue items through the `sq` CLI.
+The `sq` backend integrates with [sift-queue](https://crates.io/crates/sift-queue) and reads/writes queue items through the `sq` CLI.
 
-Implementation notes:
-- `priority`, `taskType`, and `dueAt` are stored in item metadata
-- editable task description uses the native `description` field
-- if an item has `blocked_by`, it is displayed as `blocked`
-
-It detects `.sift` by default. You can override the queue file path:
+You can override the default queue file path with:
 
 - `PI_TASKS_SQ_QUEUE_PATH` — path to a specific queue JSONL file (passed to `sq --queue`)
 

@@ -85,14 +85,20 @@ function toBackendStatus(status: TaskStatus): string {
   return mapped
 }
 
-function fromBackendStatus(status: string, blockedBy: string[] | undefined): TaskStatus {
+function isBlockedByPending(blockedBy: string[] | undefined, pendingIds: Set<string> | undefined): boolean {
+  if ((blockedBy?.length ?? 0) === 0) return false
+  if (!pendingIds) return false
+  return blockedBy.some(id => pendingIds.has(id))
+}
+
+function fromBackendStatus(status: string, blockedBy: string[] | undefined, pendingIds?: Set<string>): TaskStatus {
   if (status === STATUS_MAP.inProgress) return "inProgress"
   if (status === STATUS_MAP.closed) return "closed"
-  if ((blockedBy?.length ?? 0) > 0) return "blocked"
+  if (isBlockedByPending(blockedBy, pendingIds)) return "blocked"
   return "open"
 }
 
-function toTask(item: SqItem): Task {
+function toTask(item: SqItem, pendingIds?: Set<string>): Task {
   const metadata = extractTaskMetadata(item.metadata)
 
   return {
@@ -100,7 +106,7 @@ function toTask(item: SqItem): Task {
     id: item.id,
     title: item.title?.trim() || item.id,
     description: item.description ?? "",
-    status: fromBackendStatus(item.status, item.blocked_by),
+    status: fromBackendStatus(item.status, item.blocked_by, pendingIds),
     priority: metadata.priority,
     taskType: metadata.taskType,
     createdAt: item.created_at,
@@ -202,17 +208,27 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
 
       const pendingItems = parseJsonArray<SqItem>(pendingOut, "list pending")
       const inProgressItems = parseJsonArray<SqItem>(inProgressOut, "list in_progress")
+      const pendingIds = new Set(pendingItems.map(item => item.id))
 
       const dedupedById = new Map<string, Task>()
       for (const item of [...inProgressItems, ...pendingItems]) {
-        dedupedById.set(item.id, toTask(item))
+        dedupedById.set(item.id, toTask(item, pendingIds))
       }
 
       return sortActiveTasks([...dedupedById.values()]).slice(0, MAX_LIST_RESULTS)
     },
 
     async show(ref: string): Promise<Task> {
-      return toTask(await showRaw(ref))
+      const item = await showRaw(ref)
+
+      let pendingIds: Set<string> | undefined
+      if (item.status === STATUS_MAP.open && (item.blocked_by?.length ?? 0) > 0) {
+        const pendingOut = await execSq(["list", "--status", STATUS_MAP.open, "--json"])
+        const pendingItems = parseJsonArray<SqItem>(pendingOut, "list pending")
+        pendingIds = new Set(pendingItems.map(pendingItem => pendingItem.id))
+      }
+
+      return toTask(item, pendingIds)
     },
 
     async update(ref: string, update: TaskUpdate): Promise<void> {
