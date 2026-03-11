@@ -38,7 +38,16 @@ Set `PI_TASKS_BACKEND` to explicitly choose a backend implementation.
 Currently supported values:
 
 - `beads`
+- `sq`
 - `todo-md`
+
+### Sift Queue (`sq`) backend
+
+The `sq` backend integrates with [sift-queue](https://crates.io/crates/sift-queue) and reads/writes queue items through the `sq` CLI.
+
+You can override the default queue file path with:
+
+- `PI_TASKS_SQ_QUEUE_PATH` — path to a specific queue JSONL file (passed to `sq --queue`)
 
 ### TODO.md backend
 
