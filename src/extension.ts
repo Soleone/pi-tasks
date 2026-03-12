@@ -171,9 +171,34 @@ function applyDraftToTask(
   return nextTask
 }
 
+function buildBackendPromptAddition(backendId: string): string | undefined {
+  if (backendId !== "sq") return undefined
+
+  return `The pi-tasks extension is using the sq backend for this project.
+If you run raw shell sq commands, do not rely on sq defaults.
+When possible, pass an explicit --queue path for sq commands.
+Always pass: sq --queue "$PI_TASKS_SQ_QUEUE_PATH" ...
+Use metadata keys priority, taskType, and dueAt when setting sq task metadata.
+Example:
+\`\`\`bash
+sq --queue "$PI_TASKS_SQ_QUEUE_PATH" add \\
+  --title "Migrate query helper" \\
+  --description "Refactor ..." \\
+  --metadata '{"priority":"p1","taskType":"feature","dueAt":"2026-03-15T17:00:00Z"}' \\
+  --json
+\`\`\``
+}
+
 export default function registerExtension(pi: ExtensionAPI) {
   const backend = initializeAdapter(pi)
   validateBackendConfiguration(backend)
+
+  const backendPromptAddition = buildBackendPromptAddition(backend.id)
+  if (backendPromptAddition) {
+    pi.on("before_agent_start", async (event) => ({
+      systemPrompt: `${event.systemPrompt}\n\n${backendPromptAddition}`,
+    }))
+  }
 
   const nextStatus = (status: TaskStatus): TaskStatus => cycleStatus(status, backend.statusMap)
   const nextTaskType = (current: string | undefined): string => cycleTaskType(current, backend.taskTypes)
