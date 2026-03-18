@@ -45,9 +45,7 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
 ## Optional env vars:
 
 - `PI_TASKS_TODO_PATH` - override the TODO file path
-- `PI_TASKS_BACKEND` - to explicitly choose a backend implementation.
-Currently supported values:
-
-- `sq`
-- `beads`
-- `todo-md`
+- `PI_TASKS_BACKEND` - to explicitly choose a backend implementation. Currently supported values:
+  - `sq`
+  - `beads`
+  - `todo-md`
