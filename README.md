@@ -34,6 +34,8 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 
 By default, the extension auto-detects the first applicable backend. If none are applicable, it falls back to `todo-md`.
 
+For most setups, `sq` is recommended as the default backend. It is lightweight, works well in brand new directories, and can create its local data on demand. Install it from the [`sq` installation guide](https://github.com/DerekStride/sq?tab=readme-ov-file#installation).
+
 Set `PI_TASKS_BACKEND` to explicitly choose a backend implementation.
 Currently supported values:
 
@@ -41,9 +43,9 @@ Currently supported values:
 - `sq`
 - `todo-md`
 
-### Sift Queue (`sq`) backend
+### `sq` backend
 
-The `sq` backend integrates with [sift-queue](https://github.com/shopify-playground/sift) and reads/writes tasks through the `sq` CLI.
+The `sq` backend integrates with [`sq`](https://github.com/DerekStride/sq) and reads/writes tasks through the `sq` CLI.
 
 ### TODO.md backend
 
