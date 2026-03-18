@@ -30,27 +30,24 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 - `Tab` to switch focus between inputs
 - `Enter` to save
 
-## Backend selection
+## Task backends
 
 By default, the extension auto-detects the first applicable backend. If none are applicable, it falls back to `todo-md`.
 
 For most setups, `sq` is recommended as the default backend. It is lightweight, works well in brand new directories, and can create its local data on demand. Install it from the [`sq` installation guide](https://github.com/DerekStride/sq?tab=readme-ov-file#installation).
 
-Set `PI_TASKS_BACKEND` to explicitly choose a backend implementation.
+### Supported backends:
+
+- [sq](https://github.com/DerekStride/sq) - Uses the `sq` cli to manage tasks in a `.sift` directory via a `issues.jsonl` file. No initialization necessary.
+- [beads](https://github.com/steveyegge/beads) - Uses the `bd` cli to manage tasks into a `.beads` directory containing multiple files.
+- `todo-md` - Creates or reads a `TODO.md` file with different sections to emulate priority.
+
+## Optional env vars:
+
+- `PI_TASKS_TODO_PATH` - override the TODO file path
+- `PI_TASKS_BACKEND` - to explicitly choose a backend implementation.
 Currently supported values:
 
-- `beads`
 - `sq`
+- `beads`
 - `todo-md`
-
-### `sq` backend
-
-The `sq` backend integrates with [`sq`](https://github.com/DerekStride/sq) and reads/writes tasks through the `sq` CLI.
-
-### TODO.md backend
-
-The `todo-md` backend reads/writes a markdown task file (default: `TODO.md`; if `todo.md` already exists, it is used).
-
-Optional env var:
-
-- `PI_TASKS_TODO_PATH` — override the TODO file path
