@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.1](https://github.com/soleone/pi-tasks/compare/v0.4.0...v0.4.1) (2026-03-18)
+
+### Features
+
+* new global hotkey is ctrl+shift+r and alt+x to avoid conflicts ([e2774cf](https://github.com/soleone/pi-tasks/commit/e2774cfb2205f46ba8b967b94b609da79f27007e))
+
 ## [0.4.0](https://github.com/soleone/pi-tasks/compare/v0.3.0...v0.4.0) (2026-03-18)
 
 ### Features
