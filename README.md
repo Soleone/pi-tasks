@@ -11,16 +11,16 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 
 ## Usage
 
-- Navigate up with `w` and `s` (arrows also work)
+- Navigate with `w` / `s` (up / down arrows also work)
+- `a` to go back (`Esc` and left arrow also work)
 - `space` to change status
 - `0` to `4` to change priority
 - `t` to change task type
 - `f` for keyword search (title, description)
-- `q` or `Esc` to go back
 
 ### List view
 
-- `e` to edit a task
+- `d` to open task details
 - `Enter` to work off a task
 - `Tab` to insert task details in prompt and close Tasks UI
 - `c` to create a new task

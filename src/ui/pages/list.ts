@@ -386,6 +386,15 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
               done("cancel")
               return
 
+            case "back":
+              if (filterTerm) {
+                filterTerm = ""
+                rebuildAndRender()
+              } else {
+                done("cancel")
+              }
+              return
+
             case "searchStart":
               searching = true
               searchBuffer = ""

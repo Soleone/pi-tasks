@@ -2,6 +2,7 @@ import { Key, matchesKey } from "@mariozechner/pi-tui"
 
 export type ListIntent =
   | { type: "cancel" }
+  | { type: "back" }
   | { type: "searchStart" }
   | { type: "searchCancel" }
   | { type: "searchApply" }
@@ -123,8 +124,8 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
-    help: "e edit",
-    match: (data) => data === "e" || data === "E" || matchesKey(data, Key.right),
+    help: "d details",
+    match: (data) => data === "d" || data === "D" || matchesKey(data, Key.right),
     intent: () => ({ type: "edit" }),
   },
   {
@@ -174,6 +175,11 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
+    match: (data) => data === "a" || data === "A" || matchesKey(data, Key.left),
+    intent: () => ({ type: "back" }),
+  },
+  {
+    context: "default",
     match: (data, state) => data === state.closeKey,
     intent: () => ({ type: "cancel" }),
   },
@@ -197,7 +203,7 @@ export function buildListPrimaryHelpText(state: ListControllerState): string {
     .map(s => (typeof s.help === "function" ? s.help(state) : s.help as string))
 
   if (context === "default") {
-    parts.push(state.filtered ? "esc clear filter" : "esc cancel")
+    parts.push(state.filtered ? "a/esc clear filter" : "a/esc back")
   }
 
   return parts.join(" • ")

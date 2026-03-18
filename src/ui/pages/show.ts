@@ -392,7 +392,7 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
         return
       }
 
-      if (matchesKey(data, Key.escape) || matchesKey(data, Key.left) || data === "q" || data === "Q") {
+      if (matchesKey(data, Key.escape) || matchesKey(data, Key.left) || data === "a" || data === "A") {
         done({ action: "back" })
         return
       }
