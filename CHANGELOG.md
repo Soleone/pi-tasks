@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0](https://github.com/soleone/pi-tasks/compare/v0.3.0...v0.4.0) (2026-03-18)
+
+### Features
+
+* add shift+tab navigation and improve editor cursor styling ([e46b3c1](https://github.com/soleone/pi-tasks/commit/e46b3c1dcb9b1ddd93fdb84c7c1ea180d918c4fc))
+* **api:** add adapter session context messages ([e34af9f](https://github.com/soleone/pi-tasks/commit/e34af9fb4f295564c2ed65467d788155869256c3))
+* change shortcut to from ctrl+x to ctrl+] ([c82deb1](https://github.com/soleone/pi-tasks/commit/c82deb166eeedc84049ae0f0c6d781607daa3bd4))
+* inject session context message for beads backend for quickstart ([4106501](https://github.com/soleone/pi-tasks/commit/4106501d6b821084adb73fd933142549714c281e))
+* **sq:** add sift queue backend adapter ([24b312a](https://github.com/soleone/pi-tasks/commit/24b312a63a4a33d591c6bea8285e8070698d40c5))
+* **ui:** revamp task navigation shortcuts ([ab43a33](https://github.com/soleone/pi-tasks/commit/ab43a33dd7c73ec0d48089503a2ef59d8ee4697f))
+* **ui:** support alt+x for toggling the task list ([5cdeb07](https://github.com/soleone/pi-tasks/commit/5cdeb0735aaa26dd70b53dca178eea8961d1a15d))
+
+### Bug Fixes
+
+* save on enter in description and use modified-enter for newline ([c206cce](https://github.com/soleone/pi-tasks/commit/c206ccec60ac383305a1be4df05180f1daf40a03))
+* task form desc newline key handling and help text ([b07212e](https://github.com/soleone/pi-tasks/commit/b07212e7fc812ae71e0cce47bcb8a27b0dcab04e))
+* **ui:** align task list rows for ansi-styled titles ([eb9c5d9](https://github.com/soleone/pi-tasks/commit/eb9c5d9bdf15063a9289abbd7b767a98315e0fe0))
+* **ui:** persist form changes before exit (ensure priority is saved) ([caa7624](https://github.com/soleone/pi-tasks/commit/caa7624c87ae5f4e58e93d7eb666baffcfa88df1))
+
+### Refactors
+
+* move extension export to package root ([92dec06](https://github.com/soleone/pi-tasks/commit/92dec06732bc443fbcc6ff9ae05aa78bb6a096ec))
+
 ## [0.3.0](https://github.com/Soleone/pi-tasks/compare/v0.2.2...v0.3.0) (2026-02-17)
 
 ### Features
