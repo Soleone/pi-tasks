@@ -3,7 +3,14 @@ import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import type { Task, TaskStatus } from "../../models/task.ts"
-import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskStatusMap, TaskUpdate } from "../api.ts"
+import type {
+  CreateTaskInput,
+  TaskAdapter,
+  TaskAdapterInitializer,
+  TaskSessionContextMessage,
+  TaskStatusMap,
+  TaskUpdate,
+} from "../api.ts"
 
 const MAX_LIST_RESULTS = 100
 const STATUS_MAP = {
@@ -19,6 +26,16 @@ const PRIORITY_HOTKEYS: Record<string, string> = {
   "2": "p2",
   "3": "p3",
   "4": "p4",
+}
+
+const SESSION_CONTEXT_MESSAGE: TaskSessionContextMessage = {
+  customType: "pi-tasks-backend-context-beads-v1",
+  content: [
+    "The pi-tasks extension is using the `beads` backend for this project.",
+    "If you need a quick overview of the beads workflow, run `bd quickstart` or `bd onboard`.",
+    "For most beads commands, agents should prefer the `--json` flag so output is structured and machine-readable.",
+    "For more advanced command help, run `bd -h`.",
+  ].join(" "),
 }
 
 const OPEN_TASK_LIST_ARGS = [
@@ -222,6 +239,7 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
     taskTypes: TASK_TYPES,
     priorities: PRIORITIES,
     priorityHotkeys: PRIORITY_HOTKEYS,
+    sessionContextMessage: SESSION_CONTEXT_MESSAGE,
 
     async list(): Promise<Task[]> {
       const [openOut, inProgressOut] = await Promise.all([
