@@ -183,12 +183,13 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
     const titleLabel = new Text("", 0, 0)
     const descLabel = new Text("", 0, 0)
     const helpText = new ReservedLineText(KEYBOARD_HELP_PADDING_X)
-    const shortcutsText = new ReservedLineText(KEYBOARD_HELP_PADDING_X)
 
     let focus: FormFocus = mode === "create" ? "title" : "nav"
     let saveIndicator: "saving" | "saved" | "error" | undefined
     let saveIndicatorTimer: ReturnType<typeof setTimeout> | undefined
     let saving = false
+    let saveQueued = false
+    let savePromise: Promise<void> | null = null
     let disposed = false
 
     const editorTheme = {
@@ -243,41 +244,84 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
     let lastSavedDraft: FormDraft = currentDraft()
 
     const triggerSave = async () => {
-      if (saving || disposed) return
+      if (disposed) return
 
       const draft = currentDraft()
+      if (saving) {
+        saveQueued = true
+        await savePromise
+        return
+      }
+
       if (isSameDraft(draft, lastSavedDraft)) return
 
       saving = true
+      saveQueued = false
       if (saveIndicatorTimer) clearTimeout(saveIndicatorTimer)
       saveIndicator = "saving"
       renderLayout()
 
-      try {
-        const didSave = await onSave(draft)
-        if (disposed) return
-        if (!didSave) {
-          saveIndicator = undefined
-          return
-        }
-        lastSavedDraft = normalizeDraft(draft)
-        saveIndicator = "saved"
-      } catch (e) {
-        if (disposed) return
-        saveIndicator = "error"
-        ctx.ui.notify(e instanceof Error ? e.message : String(e), "error")
-      } finally {
-        saving = false
-        if (!disposed) renderLayout()
-      }
-
-      if (saveIndicator === "saved" && !disposed) {
-        saveIndicatorTimer = setTimeout(() => {
+      const activeSave = (async () => {
+        try {
+          const didSave = await onSave(draft)
           if (disposed) return
-          saveIndicator = undefined
-          renderLayout()
-        }, 5000)
+          if (!didSave) {
+            saveIndicator = undefined
+            return
+          }
+          lastSavedDraft = normalizeDraft(draft)
+          saveIndicator = "saved"
+        } catch (e) {
+          if (disposed) return
+          saveIndicator = "error"
+          ctx.ui.notify(e instanceof Error ? e.message : String(e), "error")
+        } finally {
+          saving = false
+          if (!disposed) renderLayout()
+        }
+
+        if (saveIndicator === "saved" && !disposed) {
+          saveIndicatorTimer = setTimeout(() => {
+            if (disposed) return
+            saveIndicator = undefined
+            renderLayout()
+          }, 5000)
+        }
+
+        if (saveQueued && !disposed) {
+          saveQueued = false
+          await triggerSave()
+        }
+      })()
+
+      savePromise = activeSave
+
+      try {
+        await activeSave
+      } finally {
+        if (savePromise === activeSave) savePromise = null
       }
+    }
+
+    const canPersistCurrentDraft = (): boolean => {
+      if (mode === "edit") return true
+      return titleValue.trim().length > 0
+    }
+
+    const triggerAutoSave = () => {
+      if (!canPersistCurrentDraft()) return
+      void triggerSave()
+    }
+
+    const exitForm = (action: TaskFormAction) => {
+      void (async () => {
+        if ((saving || !isSameDraft(currentDraft(), lastSavedDraft)) && canPersistCurrentDraft()) {
+          await triggerSave()
+          if (saving || !isSameDraft(currentDraft(), lastSavedDraft)) return
+        }
+
+        done({ action })
+      })()
     }
 
     const renderLayout = () => {
@@ -301,9 +345,11 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
       titleLabel.setText(fieldLabel(theme, "Title", focus === "title"))
       descLabel.setText(fieldLabel(theme, "Description", focus === "desc"))
 
-      helpText.setText(formatKeyboardHelp(theme, buildPrimaryHelpText(focus)))
+      const primaryHelp = buildPrimaryHelpText(focus)
       const secondaryHelp = buildSecondaryHelpText(focus, priorities, priorityHotkeys)
-      shortcutsText.setText(secondaryHelp ? formatKeyboardHelp(theme, secondaryHelp) : "")
+      const combinedHelp = secondaryHelp ? `${primaryHelp} • ${secondaryHelp}` : primaryHelp
+
+      helpText.setText(formatKeyboardHelp(theme, combinedHelp))
 
       container.invalidate()
       tui.requestRender()
@@ -322,7 +368,6 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
 
     footerContainer.addChild(new DynamicBorder((s: string) => theme.fg("dim", s)))
     footerContainer.addChild(helpText)
-    footerContainer.addChild(shortcutsText)
     footerContainer.addChild(new DynamicBorder((s: string) => theme.fg("dim", s)))
 
     renderLayout()
@@ -393,19 +438,21 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
       }
 
       if (matchesKey(data, Key.escape) || matchesKey(data, Key.left) || data === "a" || data === "A") {
-        done({ action: "back" })
+        exitForm("back")
         return
       }
 
       if (data === "t" || data === "T") {
         taskTypeValue = cycleTaskType(taskTypeValue)
         renderLayout()
+        triggerAutoSave()
         return
       }
 
       if (data === " ") {
         statusValue = cycleStatus(statusValue)
         renderLayout()
+        triggerAutoSave()
         return
       }
 
@@ -413,6 +460,7 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
       if (priority !== null) {
         priorityValue = priority
         renderLayout()
+        triggerAutoSave()
       }
     }
 
@@ -425,7 +473,7 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
       },
       handleInput: (data: string) => {
         if (closeKeys.some(closeKey => matchesKey(data, closeKey))) {
-          done({ action: "close_list" })
+          exitForm("close_list")
           return
         }
 
