@@ -20,12 +20,18 @@ export interface CreateTaskInput extends TaskUpdate {
   title: string
 }
 
+export interface TaskSessionContextMessage {
+  customType: string
+  content: string
+}
+
 export interface TaskAdapter {
   readonly id: string
   readonly statusMap: TaskStatusMap
   readonly taskTypes: string[]
   readonly priorities: string[]
   readonly priorityHotkeys?: Record<string, string>
+  readonly sessionContextMessage?: TaskSessionContextMessage
   invalidateCache?(): void
   list(): Promise<Task[]>
   show(ref: string): Promise<Task>

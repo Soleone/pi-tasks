@@ -1,7 +1,14 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent"
 import { spawnSync } from "node:child_process"
 import type { Task, TaskStatus } from "../../models/task.ts"
-import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskStatusMap, TaskUpdate } from "../api.ts"
+import type {
+  CreateTaskInput,
+  TaskAdapter,
+  TaskAdapterInitializer,
+  TaskSessionContextMessage,
+  TaskStatusMap,
+  TaskUpdate,
+} from "../api.ts"
 
 const MAX_LIST_RESULTS = 100
 const PI_TASKS_METADATA_KEY = "pi_tasks"
@@ -20,6 +27,18 @@ const PRIORITY_HOTKEYS: Record<string, string> = {
   "2": "p2",
   "3": "p3",
   "4": "p4",
+}
+
+const SESSION_CONTEXT_MESSAGE: TaskSessionContextMessage = {
+  customType: "pi-tasks-backend-context-sq-v1",
+  content: [
+    "The pi-tasks extension is using the `sq` backend for this project.",
+    "If you need direct `sq` CLI guidance, run `sq prime`.",
+    "When manipulating pi-tasks metadata through `sq`, store it under",
+    "`pi_tasks`, for example",
+    "`--metadata '{\"pi_tasks\":{\"taskType\":\"TYPE\",\"dueAt\":\"TIMESTAMP\"}}'`,",
+    "or merge the same shape with `--merge-metadata`.",
+  ].join(" "),
 }
 
 interface SqItem {
@@ -208,6 +227,7 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
     taskTypes: TASK_TYPES,
     priorities: PRIORITIES,
     priorityHotkeys: PRIORITY_HOTKEYS,
+    sessionContextMessage: SESSION_CONTEXT_MESSAGE,
 
     async list(): Promise<Task[]> {
       const [pendingOut, inProgressOut] = await Promise.all([

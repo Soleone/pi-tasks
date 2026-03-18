@@ -171,9 +171,48 @@ function applyDraftToTask(
   return nextTask
 }
 
+function branchHasCustomMessage(entries: unknown[], customType: string): boolean {
+  return entries.some((entry) => {
+    if (!entry || typeof entry !== "object") return false
+
+    const candidate = entry as {
+      type?: unknown
+      customType?: unknown
+    }
+
+    return candidate.type === "custom_message" && candidate.customType === customType
+  })
+}
+
 export default function registerExtension(pi: ExtensionAPI) {
   const backend = initializeAdapter(pi)
   validateBackendConfiguration(backend)
+
+  const backendContextMessage = backend.sessionContextMessage
+
+  function ensureBackendContextOnBranch(entries: unknown[]): void {
+    if (!backendContextMessage) return
+    if (branchHasCustomMessage(entries, backendContextMessage.customType)) return
+
+    pi.sendMessage({
+      customType: backendContextMessage.customType,
+      content: backendContextMessage.content,
+      display: false,
+      details: { backendId: backend.id },
+    })
+  }
+
+  pi.on("session_start", async (_event, ctx) => {
+    ensureBackendContextOnBranch(ctx.sessionManager.getBranch())
+  })
+
+  pi.on("session_switch", async (_event, ctx) => {
+    ensureBackendContextOnBranch(ctx.sessionManager.getBranch())
+  })
+
+  pi.on("session_fork", async (_event, ctx) => {
+    ensureBackendContextOnBranch(ctx.sessionManager.getBranch())
+  })
 
   const nextStatus = (status: TaskStatus): TaskStatus => cycleStatus(status, backend.statusMap)
   const nextTaskType = (current: string | undefined): string => cycleTaskType(current, backend.taskTypes)
