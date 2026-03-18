@@ -2,7 +2,10 @@ import { Key, matchesKey, truncateToWidth, type Component, type SelectItem, type
 
 // Local variant of pi-tui SelectList with configurable value/description column layout.
 
+const ANSI_ESCAPE_PATTERN = /\x1b\[[0-9;]*m/g
+
 const normalizeToSingleLine = (text: string): string => text.replace(/[\r\n]+/g, " ").trim()
+const visibleWidth = (text: string): number => text.replace(ANSI_ESCAPE_PATTERN, "").length
 
 export interface SelectListColumnLayout {
   valueMaxWidth?: number
@@ -86,8 +89,9 @@ export class SelectListWithColumns implements Component {
 
       const maxValueWidth = Math.min(this.layout.valueMaxWidth, width - prefix.length - 4)
       const truncatedValue = truncateToWidth(displayValue, maxValueWidth, "")
-      const spacing = " ".repeat(Math.max(1, this.layout.valueColumnWidth - truncatedValue.length))
-      const descriptionStart = prefix.length + truncatedValue.length + spacing.length
+      const truncatedValueWidth = visibleWidth(truncatedValue)
+      const spacing = " ".repeat(Math.max(1, this.layout.valueColumnWidth - truncatedValueWidth))
+      const descriptionStart = prefix.length + truncatedValueWidth + spacing.length
       const descriptionWidth = width - descriptionStart - 2
 
       if (descriptionWidth <= this.layout.minDescriptionWidth) {

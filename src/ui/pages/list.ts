@@ -10,8 +10,8 @@ import { SelectListWithColumns } from "../components/select-list-with-columns.ts
 
 const LIST_PAGE_CONTENT_MIN_HEIGHT = 20
 const TASK_LIST_ROW_LAYOUT = {
-  valueMaxWidth: 60,
-  valueColumnWidth: 62,
+  valueMaxWidth: 68,
+  valueColumnWidth: 70,
 }
 
 export interface ListPageConfig {
