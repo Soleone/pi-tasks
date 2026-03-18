@@ -366,7 +366,10 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
 
       return {
         render: (w: number) => {
-          lastWidth = w
+          if (lastWidth !== w) {
+            lastWidth = w
+            updateDescPreview()
+          }
           return container.render(w).map((l: string) => truncateToWidth(l, w))
         },
         invalidate: () => container.invalidate(),
