@@ -38,7 +38,12 @@ Set `PI_TASKS_BACKEND` to explicitly choose a backend implementation.
 Currently supported values:
 
 - `beads`
+- `sq`
 - `todo-md`
+
+### Sift Queue (`sq`) backend
+
+The `sq` backend integrates with [sift-queue](https://github.com/shopify-playground/sift) and reads/writes tasks through the `sq` CLI.
 
 ### TODO.md backend
 
