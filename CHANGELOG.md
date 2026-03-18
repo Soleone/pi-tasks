@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.2](https://github.com/soleone/pi-tasks/compare/v0.4.1...v0.4.2) (2026-03-18)
+
+### Bug Fixes
+
+* **ui:** refresh description preview on width changes ([5091cc0](https://github.com/soleone/pi-tasks/commit/5091cc05526bfeb750ce8a72c6d2a4253e31bff5))
+
 ## [0.4.1](https://github.com/soleone/pi-tasks/compare/v0.4.0...v0.4.1) (2026-03-18)
 
 ### Features
