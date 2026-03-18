@@ -24,7 +24,7 @@ export interface ListControllerState {
   filtered: boolean
   allowSearch: boolean
   allowPriority: boolean
-  closeKey: string
+  closeKeys: string[]
   priorities: string[]
   priorityHotkeys?: Record<string, string>
 }
@@ -69,6 +69,10 @@ function isPrintable(data: string): boolean {
   return data.length === 1 && data.charCodeAt(0) >= 32 && data.charCodeAt(0) < 127
 }
 
+function matchesAnyShortcut(data: string, shortcuts: string[]): boolean {
+  return shortcuts.some(shortcut => matchesKey(data, shortcut))
+}
+
 const MOVE_KEYS: Record<string, number> = {
   w: -1,
   W: -1,
@@ -84,7 +88,7 @@ const SCROLL_KEYS: Record<string, number> = {
 const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   {
     context: "search",
-    match: (data, state) => data === state.closeKey,
+    match: (data, state) => matchesAnyShortcut(data, state.closeKeys),
     intent: () => ({ type: "cancel" }),
   },
   {
@@ -180,7 +184,7 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
-    match: (data, state) => data === state.closeKey,
+    match: (data, state) => matchesAnyShortcut(data, state.closeKeys),
     intent: () => ({ type: "cancel" }),
   },
 ]

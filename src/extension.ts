@@ -6,7 +6,7 @@ import { showTaskList } from "./ui/pages/list.ts"
 import { showTaskForm } from "./ui/pages/show.ts"
 import type { TaskUpdate } from "./backend/api.ts"
 
-const CTRL_X = "\x18"
+const TASK_LIST_SHORTCUTS = ["ctrl+x", "alt+x"]
 
 function parsePriorityKey(
   data: string,
@@ -251,7 +251,7 @@ export default function registerExtension(pi: ExtensionAPI) {
       mode: "edit",
       subtitle: "Edit",
       task,
-      closeKey: CTRL_X,
+      closeKeys: TASK_LIST_SHORTCUTS,
       cycleStatus: nextStatus,
       cycleTaskType: nextTaskType,
       parsePriorityKey: nextPriorityFromKey,
@@ -300,7 +300,7 @@ export default function registerExtension(pi: ExtensionAPI) {
         priority: defaultPriority(backend.priorities),
         taskType: defaultTaskType(backend.taskTypes),
       },
-      closeKey: CTRL_X,
+      closeKeys: TASK_LIST_SHORTCUTS,
       cycleStatus: nextStatus,
       cycleTaskType: nextTaskType,
       parsePriorityKey: nextPriorityFromKey,
@@ -362,7 +362,7 @@ export default function registerExtension(pi: ExtensionAPI) {
         title: pageTitle,
         subtitle: backendLabel,
         tasks,
-        closeKey: CTRL_X,
+        closeKeys: TASK_LIST_SHORTCUTS,
         priorities: backend.priorities,
         priorityHotkeys: backend.priorityHotkeys,
         cycleStatus: nextStatus,
@@ -387,11 +387,15 @@ export default function registerExtension(pi: ExtensionAPI) {
     },
   })
 
-  pi.registerShortcut("ctrl+x", {
-    description: "Open task list",
-    handler: async (ctx) => {
-      if (!ctx.hasUI) return
-      await browseTasks(ctx as ExtensionCommandContext)
-    },
-  })
+  const openTaskListShortcut = async (ctx: ExtensionCommandContext): Promise<void> => {
+    if (!ctx.hasUI) return
+    await browseTasks(ctx)
+  }
+
+  for (const shortcut of TASK_LIST_SHORTCUTS) {
+    pi.registerShortcut(shortcut, {
+      description: "Open task list",
+      handler: openTaskListShortcut,
+    })
+  }
 }
