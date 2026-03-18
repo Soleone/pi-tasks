@@ -6,7 +6,7 @@ import { showTaskList } from "./ui/pages/list.ts"
 import { showTaskForm } from "./ui/pages/show.ts"
 import type { TaskUpdate } from "./backend/api.ts"
 
-const TASK_LIST_SHORTCUTS = ["ctrl+]", "alt+x"]
+const TASK_LIST_SHORTCUTS = ["ctrl+shift+r", "alt+x"]
 
 function parsePriorityKey(
   data: string,
