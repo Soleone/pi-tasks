@@ -126,6 +126,10 @@ function toBackendStatus(status: TaskStatus): string {
   return mapped
 }
 
+function optionWithValue(option: string, value: string): string {
+  return `${option}=${value}`
+}
+
 function fromBackendStatus(status: string, blockedBy: string[] | undefined): TaskStatus {
   if (status === STATUS_MAP.inProgress) return "inProgress"
   if (status === STATUS_MAP.closed) return "closed"
@@ -254,19 +258,19 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
       const args = ["edit", ref]
 
       if (update.title !== undefined) {
-        args.push("--set-title", update.title.trim())
+        args.push(optionWithValue("--set-title", update.title.trim()))
       }
 
       if (update.description !== undefined) {
-        args.push("--set-description", update.description)
+        args.push(optionWithValue("--set-description", update.description))
       }
 
       if (update.status !== undefined) {
-        args.push("--set-status", toBackendStatus(update.status))
+        args.push(optionWithValue("--set-status", toBackendStatus(update.status)))
       }
 
       if (update.priority !== undefined) {
-        args.push("--set-priority", toBackendPriority(update.priority))
+        args.push(optionWithValue("--set-priority", toBackendPriority(update.priority)))
       }
 
       const metadataPatch = buildPiTasksMetadata({
@@ -275,7 +279,7 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
       })
 
       if (metadataPatch) {
-        args.push("--merge-metadata", JSON.stringify(metadataPatch))
+        args.push(optionWithValue("--merge-metadata", JSON.stringify(metadataPatch)))
       }
 
       if (args.length === 2) return
@@ -294,22 +298,22 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
 
       const args = [
         "add",
-        "--title", title,
-        "--description", description,
-        "--priority", toBackendPriority(selectedPriority),
-        "--text", sourceText,
+        optionWithValue("--title", title),
+        optionWithValue("--description", description),
+        optionWithValue("--priority", toBackendPriority(selectedPriority)),
+        optionWithValue("--text", sourceText),
         "--json",
       ]
 
       if (metadata) {
-        args.push("--metadata", JSON.stringify(metadata))
+        args.push(optionWithValue("--metadata", JSON.stringify(metadata)))
       }
 
       const out = await execSq(args)
       const created = parseJsonObject<SqItem>(out, "create")
 
       if (input.status && input.status !== "open") {
-        await execSq(["edit", created.id, "--set-status", toBackendStatus(input.status)])
+        await execSq(["edit", created.id, optionWithValue("--set-status", toBackendStatus(input.status))])
         return toTask(await showRaw(created.id))
       }
 
