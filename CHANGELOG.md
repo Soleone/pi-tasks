@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0](https://github.com/soleone/pi-tasks/compare/v0.4.2...v0.5.0) (2026-05-08)
+
+### Features
+
+* New adapter tq (sq compatible) ([05a93ad](https://github.com/soleone/pi-tasks/commit/05a93adf8152b1d7eca2769003f95f793661062d))
+
+### Bug Fixes
+
+* **sq:** handle dashed option values ([efd664b](https://github.com/soleone/pi-tasks/commit/efd664bb0eb247e8ff285e3deabe3ad5d447ac62))
+
 ## [0.4.2](https://github.com/soleone/pi-tasks/compare/v0.4.1...v0.4.2) (2026-03-18)
 
 ### Bug Fixes
