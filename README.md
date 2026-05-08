@@ -32,13 +32,14 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 
 ## Task backends
 
-By default, the extension auto-detects the first applicable backend. If none are applicable, it falls back to `todo-md`.
+By default, the extension auto-detects the first applicable backend. If none are applicable, it falls back to `todo-md`. Projects with a `.tq` directory use the `tq` backend for that session; otherwise `sq` remains the recommended default.
 
 For most setups, `sq` is recommended as the default backend. It is lightweight, works well in brand new directories, and can create its local data on demand. Install it from the [`sq` installation guide](https://github.com/DerekStride/sq?tab=readme-ov-file#installation).
 
 ### Supported backends:
 
 - [sq](https://github.com/DerekStride/sq) - Uses the `sq` cli to manage tasks in a `.sift` directory via a `issues.jsonl` file. No initialization necessary.
+- `tq` - Uses the `tq` cli to manage tasks in a `.tq/tasks.jsonl` file. Automatically preferred when a `.tq` directory is detected.
 - [beads](https://github.com/steveyegge/beads) - Uses the `bd` cli to manage tasks into a `.beads` directory containing multiple files.
 - `todo-md` - Creates or reads a `TODO.md` file with different sections to emulate priority.
 
@@ -47,5 +48,6 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
 - `PI_TASKS_TODO_PATH` - override the TODO file path
 - `PI_TASKS_BACKEND` - to explicitly choose a backend implementation. Currently supported values:
   - `sq`
+  - `tq`
   - `beads`
   - `todo-md`

@@ -62,20 +62,27 @@ async function loadAdapterInitializers(): Promise<TaskAdapterInitializer[]> {
 
 const ADAPTER_INITIALIZERS = await loadAdapterInitializers()
 
+function findAdapter(id: string): TaskAdapterInitializer | undefined {
+  return ADAPTER_INITIALIZERS.find(adapter => adapter.id === id)
+}
+
 function lookup(): TaskAdapterInitializer {
   const configuredAdapterId = process.env.PI_TASKS_BACKEND?.trim()
   if (configuredAdapterId) {
-    const configured = ADAPTER_INITIALIZERS.find(adapter => adapter.id === configuredAdapterId)
+    const configured = findAdapter(configuredAdapterId)
     if (!configured) {
       throw new Error(`Unsupported tasks backend: ${configuredAdapterId}`)
     }
     return configured
   }
 
+  const tqAdapter = findAdapter("tq")
+  if (tqAdapter?.isApplicable()) return tqAdapter
+
   const detected = ADAPTER_INITIALIZERS.find(adapter => adapter.isApplicable())
   if (detected) return detected
 
-  const fallback = ADAPTER_INITIALIZERS.find(adapter => adapter.id === "todo-md")
+  const fallback = findAdapter("todo-md")
   if (fallback) return fallback
 
   return ADAPTER_INITIALIZERS[0]
