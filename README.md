@@ -32,7 +32,7 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 
 ## Task backends
 
-By default, the extension auto-detects the first applicable backend. If none are applicable, it falls back to `todo-md`. Projects with a `.tq` directory use the `tq` backend for that session; otherwise `sq` remains the recommended default.
+By default, the extension auto-detects the first applicable backend. If none are applicable, it falls back to `todo-md`. Projects with a `.tq` directory use the `tq` backend for that session, and projects with a `ws.toml` (Windshift) use the `windshift` backend; otherwise `sq` remains the recommended default.
 
 For most setups, `sq` is recommended as the default backend. It is lightweight, works well in brand new directories, and can create its local data on demand. Install it from the [`sq` installation guide](https://github.com/DerekStride/sq?tab=readme-ov-file#installation).
 
@@ -42,6 +42,7 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
 - `tq` - Uses the `tq` cli to manage tasks in a `.tq/tasks.jsonl` file. Automatically preferred when a `.tq` directory is detected.
 - [beads](https://github.com/steveyegge/beads) - Uses the `bd` cli to manage tasks into a `.beads` directory containing multiple files.
 - `todo-md` - Creates or reads a `TODO.md` file with different sections to emulate priority.
+- `windshift` - Uses the `ws` cli to manage Windshift work items in the workspace configured by a `ws.toml`. Run `ws init` to connect a project. Tasks are work items keyed like `WI-123`; status changes map to workflow transitions. Comments, links, milestones, and pages are available through the `ws` cli directly. Priority editing requires a `ws` build that supports `ws priority ls`; older builds show priority read-only.
 
 ## Optional env vars:
 
@@ -51,3 +52,4 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
   - `tq`
   - `beads`
   - `todo-md`
+  - `windshift`

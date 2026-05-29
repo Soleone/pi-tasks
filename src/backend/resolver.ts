@@ -79,6 +79,12 @@ function lookup(): TaskAdapterInitializer {
   const tqAdapter = findAdapter("tq")
   if (tqAdapter?.isApplicable()) return tqAdapter
 
+  // A ws.toml is an unambiguous Windshift-project marker, so prefer the
+  // windshift adapter over backends that are merely globally installed
+  // (e.g. sq), the same way tq wins when a .tq directory is present.
+  const windshiftAdapter = findAdapter("windshift")
+  if (windshiftAdapter?.isApplicable()) return windshiftAdapter
+
   const detected = ADAPTER_INITIALIZERS.find(adapter => adapter.isApplicable())
   if (detected) return detected
 
