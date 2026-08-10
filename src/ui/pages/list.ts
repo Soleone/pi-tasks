@@ -7,6 +7,7 @@ import { DESCRIPTION_PART_SEPARATOR, buildListRowModel, decodeDescription, strip
 import { buildListPrimaryHelpText, buildListSecondaryHelpText, resolveListIntent } from "../../controllers/list.ts"
 import { KEYBOARD_HELP_PADDING_X, formatKeyboardHelp } from "../components/keyboard-help.ts"
 import { MinHeightContainer } from "../components/min-height.ts"
+import { ReservedLineText } from "../components/reserved-line-text.ts"
 import { SelectListWithColumns } from "../components/select-list-with-columns.ts"
 
 const LIST_PAGE_CONTENT_MIN_HEIGHT = 20
@@ -275,7 +276,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       headerContainer.addChild(new DynamicBorder((s: string) => theme.fg("dim", s)))
       headerContainer.addChild(titleText)
 
-      const helpText = new Text("", KEYBOARD_HELP_PADDING_X, 0)
+      const helpText = new ReservedLineText(KEYBOARD_HELP_PADDING_X)
       const shortcutsText = new Text(formatKeyboardHelp(theme, buildListSecondaryHelpText()), KEYBOARD_HELP_PADDING_X, 0)
 
       footerContainer.addChild(new DynamicBorder((s: string) => theme.fg("dim", s)))
