@@ -14,6 +14,8 @@ export interface TaskUpdate {
   priority?: string
   taskType?: string
   dueAt?: string
+  parentRef?: string | null
+  blockedBy?: string[]
 }
 
 export interface CreateTaskInput extends TaskUpdate {
@@ -25,8 +27,14 @@ export interface TaskSessionContextMessage {
   content: string
 }
 
+export interface TaskAdapterCapabilities {
+  hierarchy: "native" | "metadata" | "markdown" | "none"
+  dependencies: "native" | "metadata" | "none"
+}
+
 export interface TaskAdapter {
   readonly id: string
+  readonly capabilities: TaskAdapterCapabilities
   readonly statusMap: TaskStatusMap
   readonly taskTypes: string[]
   readonly priorities: string[]

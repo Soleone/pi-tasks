@@ -26,6 +26,11 @@ interface TodoTaskRecord {
   description: string
   status: TaskStatus
   priority: TodoPriority | undefined
+  parentRef?: string
+}
+
+interface ParsedTodoTask extends Omit<TodoTaskRecord, "ref" | "parentRef"> {
+  parentIndex?: number
 }
 
 interface TodoDocument {
@@ -57,21 +62,22 @@ function headingToSection(line: string): TodoSection | null {
   return match[1]!.toLowerCase() as TodoSection
 }
 
-function parseTaskLine(line: string): { checked: boolean; title: string; inlineDescription: string } | null {
-  const match = line.match(/^\s*-\s*\[( |x|X)\]\s*(?:\*\*(.+?)\*\*|(.+?))(?:\s*[—-]\s*(.+))?\s*$/)
+function parseTaskLine(line: string): { checked: boolean; title: string; inlineDescription: string; indent: number } | null {
+  const match = line.match(/^(\s*)-\s*\[( |x|X)\]\s*(?:\*\*(.+?)\*\*|(.+?))(?:\s*[—-]\s*(.+))?\s*$/)
   if (!match) return null
 
   return {
-    checked: match[1]!.toLowerCase() === "x",
-    title: (match[2] ?? match[3] ?? "").trim(),
-    inlineDescription: (match[4] ?? "").trim(),
+    indent: match[1]!.replace(/\t/g, "  ").length,
+    checked: match[2]!.toLowerCase() === "x",
+    title: (match[3] ?? match[4] ?? "").trim(),
+    inlineDescription: (match[5] ?? "").trim(),
   }
 }
 
-function parseDescriptionBullet(line: string): string | null {
-  const match = line.match(/^\s{2,}-\s+(.+)$/)
+function parseDescriptionBullet(line: string): { indent: number; text: string } | null {
+  const match = line.match(/^(\s+)-\s+(.+)$/)
   if (!match) return null
-  return `- ${match[1]!.trim()}`
+  return { indent: match[1]!.replace(/\t/g, "  ").length, text: `- ${match[2]!.trim()}` }
 }
 
 function computeTaskRef(title: string, description: string, occurrence: number): string {
@@ -93,17 +99,21 @@ function createNewTaskRef(existingRefs: Set<string>): string {
   return candidate
 }
 
-function assignTaskRefs(tasks: Omit<TodoTaskRecord, "ref">[]): TodoTaskRecord[] {
+function assignTaskRefs(tasks: ParsedTodoTask[]): TodoTaskRecord[] {
   const seen = new Map<string, number>()
-
-  return tasks.map((task) => {
+  const refs = tasks.map((task) => {
     const key = `${task.title.trim()}\n${task.description.trim()}`
     const nextOccurrence = (seen.get(key) ?? 0) + 1
     seen.set(key, nextOccurrence)
+    return computeTaskRef(task.title, task.description, nextOccurrence)
+  })
 
+  return tasks.map((task, index) => {
+    const { parentIndex, ...record } = task
     return {
-      ...task,
-      ref: computeTaskRef(task.title, task.description, nextOccurrence),
+      ...record,
+      ref: refs[index]!,
+      parentRef: parentIndex === undefined ? undefined : refs[parentIndex],
     }
   })
 }
@@ -117,73 +127,56 @@ function extractTitle(lines: string[]): string {
 function parseChecklistTasks(
   lines: string[],
   resolvePriority: (section: TodoSection | null) => TodoPriority | undefined,
-): Omit<TodoTaskRecord, "ref">[] {
-  const parsedTasks: Omit<TodoTaskRecord, "ref">[] = []
-
+): ParsedTodoTask[] {
+  const parsedTasks: ParsedTodoTask[] = []
+  const ancestors: Array<{ index: number; indent: number }> = []
   let section: TodoSection | null = null
-  let activeTask: {
-    checked: boolean
-    title: string
-    inlineDescription: string
-    bullets: string[]
-    section: TodoSection | null
-  } | null = null
-
-  const flushActiveTask = () => {
-    if (!activeTask) return
-
-    const description = activeTask.bullets.length > 0
-      ? activeTask.bullets.join("\n")
-      : activeTask.inlineDescription
-
-    parsedTasks.push({
-      title: activeTask.title,
-      description,
-      status: activeTask.checked ? "closed" : "open",
-      priority: activeTask.checked ? undefined : resolvePriority(activeTask.section),
-    })
-
-    activeTask = null
-  }
+  let activeIndex: number | undefined
+  let activeIndent = -1
 
   for (const line of lines) {
     const nextSection = headingToSection(line)
     if (nextSection) {
-      flushActiveTask()
       section = nextSection
+      activeIndex = undefined
+      ancestors.length = 0
       continue
     }
 
     const taskLine = parseTaskLine(line)
     if (taskLine) {
-      flushActiveTask()
-      activeTask = {
-        ...taskLine,
-        bullets: [],
-        section,
-      }
+      while (ancestors.length > 0 && ancestors[ancestors.length - 1]!.indent >= taskLine.indent) ancestors.pop()
+      const parentIndex = ancestors[ancestors.length - 1]?.index
+      const index = parsedTasks.length
+      parsedTasks.push({
+        title: taskLine.title,
+        description: taskLine.inlineDescription,
+        status: taskLine.checked ? "closed" : "open",
+        priority: taskLine.checked ? undefined : resolvePriority(section),
+        parentIndex,
+      })
+      ancestors.push({ index, indent: taskLine.indent })
+      activeIndex = index
+      activeIndent = taskLine.indent
       continue
     }
-
-    if (!activeTask) continue
 
     const bullet = parseDescriptionBullet(line)
-    if (bullet) {
-      activeTask.bullets.push(bullet)
+    if (bullet && activeIndex !== undefined && bullet.indent > activeIndent) {
+      const task = parsedTasks[activeIndex]!
+      task.description = task.description
+        ? `${task.description}\n${bullet.text}`
+        : bullet.text
       continue
     }
 
-    if (line.trim().length === 0) continue
-
-    flushActiveTask()
+    if (line.trim().length > 0) activeIndex = undefined
   }
-
-  flushActiveTask()
 
   return parsedTasks
 }
 
-function parseTodoDocument(content: string): TodoDocument {
+export function parseTodoDocument(content: string): TodoDocument {
   const lines = content.split(/\r?\n/)
   const title = extractTitle(lines)
   const hasStructuredSections = lines.some(line => headingToSection(line) !== null)
@@ -216,24 +209,52 @@ function asBulletLines(description: string): string[] {
   return normalized.map(line => line.startsWith("- ") ? line : `- ${line}`)
 }
 
-function taskToMarkdownLine(task: TodoTaskRecord): string[] {
+function taskToMarkdownLine(task: TodoTaskRecord, indent = 0): string[] {
+  const padding = " ".repeat(indent)
   const checked = task.status === "closed" ? "x" : " "
   const title = task.title.trim()
   const description = task.description.trim()
 
   if (description.length === 0) {
-    return [`- [${checked}] **${title}**`]
+    return [`${padding}- [${checked}] **${title}**`]
   }
 
   const descriptionLines = description.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   if (descriptionLines.length === 1 && !descriptionLines[0]!.startsWith("- ")) {
-    return [`- [${checked}] **${title}** — ${descriptionLines[0]}`]
+    return [`${padding}- [${checked}] **${title}** — ${descriptionLines[0]}`]
   }
 
-  const lines = [`- [${checked}] **${title}**`]
+  const lines = [`${padding}- [${checked}] **${title}**`]
   for (const bullet of asBulletLines(description)) {
-    lines.push(`  ${bullet}`)
+    lines.push(`${padding}  ${bullet}`)
   }
+  return lines
+}
+
+function renderTaskForest(tasks: TodoTaskRecord[]): string[] {
+  const byParent = new Map<string, TodoTaskRecord[]>()
+  const refs = new Set(tasks.map(task => task.ref))
+  const roots: TodoTaskRecord[] = []
+  for (const task of tasks) {
+    if (!task.parentRef || !refs.has(task.parentRef) || task.parentRef === task.ref) {
+      roots.push(task)
+      continue
+    }
+    const children = byParent.get(task.parentRef) ?? []
+    children.push(task)
+    byParent.set(task.parentRef, children)
+  }
+
+  const lines: string[] = []
+  const visited = new Set<string>()
+  const visit = (task: TodoTaskRecord, depth: number) => {
+    if (visited.has(task.ref)) return
+    visited.add(task.ref)
+    lines.push(...taskToMarkdownLine(task, depth * 2))
+    for (const child of byParent.get(task.ref) ?? []) visit(child, depth + 1)
+  }
+  for (const root of roots) visit(root, 0)
+  for (const task of tasks) if (!visited.has(task.ref)) visit(task, 0)
   return lines
 }
 
@@ -245,14 +266,24 @@ function renderStructuredDocument(document: TodoDocument): string {
     archive: [],
   }
 
+  const byRef = new Map(document.tasks.map(task => [task.ref, task]))
+  const rootFor = (task: TodoTaskRecord): TodoTaskRecord => {
+    const seen = new Set<string>()
+    let current = task
+    while (current.parentRef && byRef.has(current.parentRef) && !seen.has(current.parentRef)) {
+      seen.add(current.ref)
+      current = byRef.get(current.parentRef)!
+    }
+    return current
+  }
+
   for (const task of document.tasks) {
-    if (task.status === "closed") {
+    const root = rootFor(task)
+    if (root.status === "closed") {
       sectionTasks.archive.push(task)
       continue
     }
-
-    const priority = task.priority ?? "now"
-    sectionTasks[priority].push(task)
+    sectionTasks[root.priority ?? "now"].push(task)
   }
 
   const lines: string[] = [`# ${document.title}`, ""]
@@ -268,9 +299,7 @@ function renderStructuredDocument(document: TodoDocument): string {
     lines.push(`## ${sectionTitleById[section]}`)
     lines.push("")
 
-    for (const task of sectionTasks[section]) {
-      lines.push(...taskToMarkdownLine(task))
-    }
+    lines.push(...renderTaskForest(sectionTasks[section]))
 
     lines.push("")
   }
@@ -281,24 +310,30 @@ function renderStructuredDocument(document: TodoDocument): string {
 function renderFlatDocument(document: TodoDocument): string {
   const lines: string[] = [`# ${document.title}`, ""]
 
-  const openTasks = document.tasks.filter(task => task.status === "open")
-  for (const task of openTasks) {
-    lines.push(...taskToMarkdownLine(task))
+  const rootByRef = new Map(document.tasks.map(task => [task.ref, task]))
+  const rootFor = (task: TodoTaskRecord): TodoTaskRecord => {
+    const seen = new Set<string>()
+    let current = task
+    while (current.parentRef && rootByRef.has(current.parentRef) && !seen.has(current.parentRef)) {
+      seen.add(current.ref)
+      current = rootByRef.get(current.parentRef)!
+    }
+    return current
   }
+  const openTasks = document.tasks.filter(task => rootFor(task).status !== "closed")
+  lines.push(...renderTaskForest(openTasks))
 
-  const archivedTasks = document.tasks.filter(task => task.status === "closed")
+  const archivedTasks = document.tasks.filter(task => rootFor(task).status === "closed")
   if (archivedTasks.length > 0) {
     lines.push("", "## Archive", "")
-    for (const task of archivedTasks) {
-      lines.push(...taskToMarkdownLine(task))
-    }
+    lines.push(...renderTaskForest(archivedTasks))
   }
 
   lines.push("")
   return `${lines.join("\n").trimEnd()}\n`
 }
 
-function renderTodoDocument(document: TodoDocument): string {
+export function renderTodoDocument(document: TodoDocument): string {
   const shouldUseStructured = document.format === "structured" || document.tasks.some(task => (
     task.status === "open" && task.priority !== undefined && task.priority !== "now"
   ))
@@ -323,6 +358,7 @@ function toTask(task: TodoTaskRecord): Task {
     status: task.status,
     priority: task.priority,
     taskType: "task",
+    parentRef: task.parentRef,
   }
 }
 
@@ -345,6 +381,7 @@ function applyTaskUpdate(task: TodoTaskRecord, update: TaskUpdate): TodoTaskReco
     description: nextDescription,
     status: nextStatus,
     priority: nextStatus === "closed" ? undefined : (nextPriority ?? "now"),
+    parentRef: update.parentRef === undefined ? task.parentRef : (update.parentRef ?? undefined),
   }
 }
 
@@ -386,6 +423,7 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
 
   return {
     id: "todo-md",
+    capabilities: { hierarchy: "markdown", dependencies: "none" },
     statusMap: STATUS_MAP,
     taskTypes: ["task"],
     priorities: [...OPEN_PRIORITIES],
@@ -413,8 +451,25 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
       if (index === -1) throw new Error(`Task not found: ${ref}`)
 
       const updatedTasks = [...document.tasks]
-      updatedTasks[index] = applyTaskUpdate(updatedTasks[index]!, update)
+      const currentTask = updatedTasks[index]!
+      let taskUpdate = update
 
+      if (update.priority !== undefined && currentTask.parentRef) {
+        const byRef = new Map(updatedTasks.map((task, taskIndex) => [task.ref, taskIndex]))
+        const seen = new Set<string>()
+        let rootIndex = index
+        let parentRef = currentTask.parentRef
+        while (parentRef && byRef.has(parentRef) && !seen.has(parentRef)) {
+          seen.add(parentRef)
+          rootIndex = byRef.get(parentRef)!
+          parentRef = updatedTasks[rootIndex]!.parentRef
+        }
+        updatedTasks[rootIndex] = applyTaskUpdate(updatedTasks[rootIndex]!, { priority: update.priority })
+        const { priority: _inheritedPriority, ...remainingUpdate } = update
+        taskUpdate = remainingUpdate
+      }
+
+      updatedTasks[index] = applyTaskUpdate(updatedTasks[index]!, taskUpdate)
       await persistDocument({ ...document, tasks: updatedTasks })
     },
 
@@ -431,6 +486,7 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
         priority: status === "closed"
           ? undefined
           : (normalizePriority(input.priority) ?? "now"),
+        parentRef: input.parentRef ?? undefined,
       }
 
       await persistDocument({ ...document, tasks: [...document.tasks, createdTask] })

@@ -26,7 +26,8 @@ function parsePriorityKey(
 function cycleStatus(current: TaskStatus, statusMap: Record<string, string>): TaskStatus {
   const statusCycle = Object.keys(statusMap) as TaskStatus[]
   if (statusCycle.length === 0) return "open"
-  const idx = statusCycle.indexOf(current)
+  const normalizedCurrent = current === "blocked" ? "open" : current
+  const idx = statusCycle.indexOf(normalizedCurrent)
   if (idx === -1) return statusCycle[0]
   return statusCycle[(idx + 1) % statusCycle.length]
 }
@@ -286,7 +287,7 @@ export default function registerExtension(pi: ExtensionAPI) {
     }
   }
 
-  async function createTask(ctx: ExtensionCommandContext): Promise<Task | null> {
+  async function createTask(ctx: ExtensionCommandContext, parentRef?: string): Promise<Task | null> {
     let createdTask: Task | null = null
 
     await showTaskForm(ctx, {
@@ -299,6 +300,7 @@ export default function registerExtension(pi: ExtensionAPI) {
         status: "open",
         priority: defaultPriority(backend.priorities),
         taskType: defaultTaskType(backend.taskTypes),
+        parentRef,
       },
       closeKeys: TASK_LIST_SHORTCUTS,
       cycleStatus: nextStatus,
@@ -319,6 +321,7 @@ export default function registerExtension(pi: ExtensionAPI) {
             status: draft.status,
             priority: draft.priority,
             taskType: draft.taskType,
+            parentRef,
           })
           return true
         }
@@ -365,13 +368,14 @@ export default function registerExtension(pi: ExtensionAPI) {
         closeKeys: TASK_LIST_SHORTCUTS,
         priorities: backend.priorities,
         priorityHotkeys: backend.priorityHotkeys,
+        allowHierarchy: backend.capabilities.hierarchy !== "none",
         cycleStatus: nextStatus,
         cycleTaskType: nextTaskType,
         onUpdateTask: updateTask,
         onWork: (task) => pi.sendUserMessage(buildTaskWorkPrompt(task)),
         onInsert: (task) => ctx.ui.pasteToEditor(`${serializeTask(task)} `),
         onEdit: (ref, task) => editTask(ctx, ref, task),
-        onCreate: () => createTask(ctx),
+        onCreate: parentRef => createTask(ctx, parentRef),
       })
     } catch (e) {
       ctx.ui.setStatus("tasks", undefined)

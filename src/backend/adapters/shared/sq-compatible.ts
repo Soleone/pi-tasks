@@ -9,7 +9,6 @@ import type {
   TaskUpdate,
 } from "../../api.ts"
 
-const MAX_LIST_RESULTS = 100
 const PI_TASKS_METADATA_KEY = "pi_tasks"
 
 const STATUS_MAP = {
@@ -50,6 +49,7 @@ interface SqCompatibleItem {
 interface TaskMetadata {
   taskType?: string
   dueAt?: string
+  parentRef?: string
 }
 
 function normalizePriority(value: unknown): string | undefined {
@@ -95,10 +95,15 @@ function extractTaskMetadata(metadata: Record<string, unknown> | undefined): Tas
   return {
     taskType: normalizeText(piTasks.taskType),
     dueAt: normalizeText(piTasks.dueAt),
+    parentRef: normalizeText(piTasks.parentRef),
   }
 }
 
-function buildPiTasksMetadata(input: { taskType?: string, dueAt?: string }): Record<string, unknown> | undefined {
+function buildPiTasksMetadata(input: {
+  taskType?: string
+  dueAt?: string
+  parentRef?: string | null
+}): Record<string, unknown> | undefined {
   const piTasks: Record<string, unknown> = {}
 
   if (input.taskType !== undefined) {
@@ -107,6 +112,10 @@ function buildPiTasksMetadata(input: { taskType?: string, dueAt?: string }): Rec
 
   if (input.dueAt !== undefined) {
     piTasks.dueAt = input.dueAt
+  }
+
+  if (input.parentRef !== undefined) {
+    piTasks.parentRef = input.parentRef ?? ""
   }
 
   return Object.keys(piTasks).length > 0
@@ -124,28 +133,39 @@ function optionWithValue(option: string, value: string): string {
   return `${option}=${value}`
 }
 
-function fromBackendStatus(status: string, blockedBy: string[] | undefined): TaskStatus {
+function fromBackendStatus(status: string): TaskStatus {
   if (status === STATUS_MAP.inProgress) return "inProgress"
   if (status === STATUS_MAP.closed) return "closed"
-  if ((blockedBy?.length ?? 0) > 0) return "blocked"
   return "open"
 }
 
-function toTask(item: SqCompatibleItem): Task {
+function toTask(item: SqCompatibleItem, itemsById: ReadonlyMap<string, SqCompatibleItem> = new Map()): Task {
   const metadata = extractTaskMetadata(item.metadata)
+  const blockers = (item.blocked_by ?? []).map((ref) => {
+    const blocker = itemsById.get(ref)
+    return {
+      ref,
+      title: blocker?.title?.trim() || undefined,
+      status: blocker ? fromBackendStatus(blocker.status) : undefined,
+    }
+  })
+  const lifecycleStatus = fromBackendStatus(item.status)
+  const hasUnresolvedBlocker = blockers.some(blocker => blocker.status !== "closed")
 
   return {
     ref: item.id,
     id: item.id,
     title: item.title?.trim() || item.id,
     description: item.description ?? "",
-    status: fromBackendStatus(item.status, item.blocked_by),
+    status: lifecycleStatus === "open" && hasUnresolvedBlocker ? "blocked" : lifecycleStatus,
     priority: normalizePriority(item.priority),
     taskType: metadata.taskType,
     createdAt: item.created_at,
     updatedAt: item.updated_at,
     dueAt: metadata.dueAt,
-    dependencyCount: item.blocked_by?.length,
+    parentRef: metadata.parentRef,
+    blockers,
+    dependencyCount: blockers.length,
   }
 }
 
@@ -216,6 +236,7 @@ function initialize(pi: ExtensionAPI, options: SqCompatibleAdapterOptions): Task
 
   return {
     id: options.id,
+    capabilities: { hierarchy: "metadata", dependencies: "native" },
     statusMap: STATUS_MAP,
     taskTypes: TASK_TYPES,
     priorities: PRIORITIES,
@@ -223,24 +244,26 @@ function initialize(pi: ExtensionAPI, options: SqCompatibleAdapterOptions): Task
     sessionContextMessage: options.sessionContextMessage,
 
     async list(): Promise<Task[]> {
-      const [pendingOut, inProgressOut] = await Promise.all([
-        execCommand(["list", "--status", STATUS_MAP.open, "--json"]),
-        execCommand(["list", "--status", STATUS_MAP.inProgress, "--json"]),
-      ])
-
-      const pendingItems = parseJsonArray<SqCompatibleItem>(pendingOut, "list pending", options.command)
-      const inProgressItems = parseJsonArray<SqCompatibleItem>(inProgressOut, "list in_progress", options.command)
-
-      const dedupedById = new Map<string, Task>()
-      for (const item of [...inProgressItems, ...pendingItems]) {
-        dedupedById.set(item.id, toTask(item))
+      const out = await execCommand(["list", "--all", "--json"])
+      const allItems = parseJsonArray<SqCompatibleItem>(out, "list all", options.command)
+      const itemsById = new Map(allItems.map(item => [item.id, item]))
+      const activeItems = allItems.filter(item => item.status !== STATUS_MAP.closed)
+      const tasks = activeItems.map(item => toTask(item, itemsById))
+      const childCounts = new Map<string, number>()
+      for (const task of tasks) {
+        if (task.parentRef) childCounts.set(task.parentRef, (childCounts.get(task.parentRef) ?? 0) + 1)
       }
-
-      return sortActiveTasks([...dedupedById.values()]).slice(0, MAX_LIST_RESULTS)
+      for (const task of tasks) task.childCount = childCounts.get(task.ref) ?? 0
+      return sortActiveTasks(tasks)
     },
 
     async show(ref: string): Promise<Task> {
-      return toTask(await showRaw(ref))
+      const [item, allOut] = await Promise.all([
+        showRaw(ref),
+        execCommand(["list", "--all", "--json"]),
+      ])
+      const allItems = parseJsonArray<SqCompatibleItem>(allOut, "list all for show", options.command)
+      return toTask(item, new Map(allItems.map(candidate => [candidate.id, candidate])))
     },
 
     async update(ref: string, update: TaskUpdate): Promise<void> {
@@ -265,10 +288,15 @@ function initialize(pi: ExtensionAPI, options: SqCompatibleAdapterOptions): Task
       const metadataPatch = buildPiTasksMetadata({
         taskType: update.taskType,
         dueAt: update.dueAt,
+        parentRef: update.parentRef,
       })
 
       if (metadataPatch) {
         args.push(optionWithValue("--merge-metadata", JSON.stringify(metadataPatch)))
+      }
+
+      if (update.blockedBy !== undefined) {
+        args.push(optionWithValue("--set-blocked-by", update.blockedBy.join(",")))
       }
 
       if (args.length === 2) return
@@ -282,6 +310,7 @@ function initialize(pi: ExtensionAPI, options: SqCompatibleAdapterOptions): Task
       const metadata = buildPiTasksMetadata({
         taskType: input.taskType || TASK_TYPES[0],
         dueAt: input.dueAt,
+        parentRef: input.parentRef,
       })
       const sourceText = description.trim().length > 0 ? description : title
 
@@ -296,6 +325,10 @@ function initialize(pi: ExtensionAPI, options: SqCompatibleAdapterOptions): Task
 
       if (metadata) {
         args.push(optionWithValue("--metadata", JSON.stringify(metadata)))
+      }
+
+      if (input.blockedBy?.length) {
+        args.push(optionWithValue("--blocked-by", input.blockedBy.join(",")))
       }
 
       const out = await execCommand(args)

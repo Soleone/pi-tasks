@@ -23,6 +23,7 @@
   "files": [
     "index.ts",
     "src",
+    "scripts",
     "README.md",
     "CONTRIBUTING.md",
     "LICENSE"
@@ -34,6 +35,7 @@
     "tui"
   ],
   "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts",
     "release": "release-it",
     "release:dry": "release-it --dry-run"
   },

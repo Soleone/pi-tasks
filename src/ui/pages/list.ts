@@ -1,6 +1,7 @@
 import { DynamicBorder, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
 import { Container, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui"
-import { toKebabCase, type Task, type TaskStatus } from "../../models/task.ts"
+import type { Task, TaskStatus } from "../../models/task.ts"
+import { projectTaskList } from "../../models/task-hierarchy.ts"
 import type { TaskUpdate } from "../../backend/api.ts"
 import { DESCRIPTION_PART_SEPARATOR, buildListRowModel, decodeDescription, stripAnsi } from "../../models/list-item.ts"
 import { buildListPrimaryHelpText, buildListSecondaryHelpText, resolveListIntent } from "../../controllers/list.ts"
@@ -20,6 +21,7 @@ export interface ListPageConfig {
   tasks: Task[]
   allowPriority?: boolean
   allowSearch?: boolean
+  allowHierarchy?: boolean
   filterTerm?: string
   priorities: string[]
   priorityHotkeys?: Record<string, string>
@@ -30,7 +32,7 @@ export interface ListPageConfig {
   onWork: (task: Task) => void
   onInsert: (task: Task) => void
   onEdit: (ref: string, task: Task | undefined) => Promise<{ updatedTask: Task | null; closeList: boolean }>
-  onCreate: () => Promise<Task | null>
+  onCreate: (parentRef?: string) => Promise<Task | null>
 }
 
 function truncateDescription(desc: string | undefined, maxLines: number): string[] {
@@ -39,16 +41,6 @@ function truncateDescription(desc: string | undefined, maxLines: number): string
   const lines = allLines.slice(0, maxLines)
   if (allLines.length > maxLines) lines.push("...")
   return lines
-}
-
-function matchesFilter(task: Task, term: string): boolean {
-  const lower = term.toLowerCase()
-  return (
-    task.title.toLowerCase().includes(lower) ||
-    (task.description ?? "").toLowerCase().includes(lower) ||
-    (task.id ?? "").toLowerCase().includes(lower) ||
-    toKebabCase(task.status).includes(lower)
-  )
 }
 
 function buildHeaderText(
@@ -67,16 +59,16 @@ function buildHeaderText(
 }
 
 export async function showTaskList(ctx: ExtensionCommandContext, config: ListPageConfig): Promise<void> {
-  const { title, subtitle, tasks, allowPriority = true, allowSearch = true } = config
+  const { title, subtitle, tasks, allowPriority = true, allowSearch = true, allowHierarchy = false } = config
 
   const displayTasks = [...tasks]
   let filterTerm = config.filterTerm || ""
   let rememberedSelectedRef: string | undefined
+  let grouped = false
+  const expandedRefs = new Set<string>()
 
   while (true) {
-    const visible = filterTerm
-      ? displayTasks.filter(i => matchesFilter(i, filterTerm))
-      : displayTasks
+    const visible = projectTaskList(displayTasks, { grouped, expandedRefs, filterTerm }).map(row => row.task)
 
     if (visible.length === 0 && filterTerm) {
       ctx.ui.notify(`No matches for "${filterTerm}"`, "warning")
@@ -84,12 +76,18 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       continue
     }
 
-    const getMaxLabelWidth = () => Math.max(...displayTasks.map(i =>
-      stripAnsi(buildListRowModel(i).label).length
+    const projectedTasks = () => projectTaskList(displayTasks, { grouped, expandedRefs, filterTerm })
+    const taskWithHierarchyLabel = (task: Task, depth: number, hasChildren: boolean, expanded: boolean): Task => ({
+      ...task,
+      title: `${"  ".repeat(depth)}${hasChildren ? (expanded ? "▾ " : "▸ ") : (depth > 0 ? "  " : "")}${task.title}`,
+    })
+    const getMaxLabelWidth = () => Math.max(0, ...projectedTasks().map(row =>
+      stripAnsi(buildListRowModel(taskWithHierarchyLabel(row.task, row.depth, row.hasChildren, row.expanded)).label).length
     ))
 
     let selectedRef: string | undefined
-    const result = await ctx.ui.custom<"cancel" | "select" | "create">((tui: any, theme: any, _kb: any, done: any) => {
+    let createParentRef: string | undefined
+    const result = await ctx.ui.custom<"cancel" | "select" | "create" | "createChild">((tui: any, theme: any, _kb: any, done: any) => {
       const container = new Container()
       let searching = false
       let searchBuffer = ""
@@ -125,12 +123,10 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       }
 
       const getItems = () => {
-        const filtered = filterTerm
-          ? displayTasks.filter(i => matchesFilter(i, filterTerm))
-          : displayTasks
+        const projected = projectedTasks()
         const maxLabelWidth = getMaxLabelWidth()
-        return filtered.map((task) => {
-          const row = buildListRowModel(task, { maxLabelWidth })
+        return projected.map(({ task, depth, hasChildren, expanded }) => {
+          const row = buildListRowModel(taskWithHierarchyLabel(task, depth, hasChildren, expanded), { maxLabelWidth })
           return {
             value: row.ref,
             label: row.label,
@@ -265,7 +261,13 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         }
 
         previewTitleText.setText(theme.fg("accent", theme.bold(task.title)))
-        const descLines = truncateDescription(task.description, 100)
+        const relationshipLines: string[] = []
+        if (task.parentRef) relationshipLines.push(`Parent: ${task.parentRef}`)
+        if (task.blockers?.length) {
+          const blockers = task.blockers.map(blocker => `${blocker.ref}${blocker.title ? ` ${blocker.title}` : ""} (${blocker.status ?? "unknown"})`)
+          relationshipLines.push(`Blocked by: ${blockers.join(", ")}`)
+        }
+        const descLines = [...relationshipLines, ...truncateDescription(task.description, 100)]
         descTextComponent.setText(buildDescText(descLines, lastWidth))
       }
       if (items[0]) updateDescPreview()
@@ -284,12 +286,14 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       renderListArea()
 
       const refreshDisplay = () => {
-        titleText.setText(buildHeaderText(theme, title, subtitle, searching, searchBuffer, filterTerm))
+        const modeSubtitle = `${subtitle ?? ""}${subtitle ? " • " : ""}${grouped ? "grouped" : "flat"}`
+        titleText.setText(buildHeaderText(theme, title, modeSubtitle, searching, searchBuffer, filterTerm))
         helpText.setText(formatKeyboardHelp(theme, buildListPrimaryHelpText({
           searching,
           filtered: !!filterTerm,
           allowPriority,
           allowSearch,
+          allowHierarchy,
           closeKeys: config.closeKeys,
           priorities: config.priorities,
           priorityHotkeys: config.priorityHotkeys,
@@ -379,6 +383,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
             filtered: !!filterTerm,
             allowSearch,
             allowPriority,
+            allowHierarchy,
             closeKeys: config.closeKeys,
             priorities: config.priorities,
             priorityHotkeys: config.priorityHotkeys,
@@ -502,8 +507,30 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
               })
               return
 
+            case "toggleGrouping":
+              grouped = !grouped
+              rebuildAndRender()
+              return
+
+            case "toggleExpanded":
+              withSelectedTask((task) => {
+                const projected = projectedTasks().find(row => row.task.ref === task.ref)
+                if (!projected?.hasChildren || !grouped) return
+                if (expandedRefs.has(task.ref)) expandedRefs.delete(task.ref)
+                else expandedRefs.add(task.ref)
+                rebuildAndRender()
+              })
+              return
+
             case "create":
               done("create")
+              return
+
+            case "createChild":
+              withSelectedTask((task) => {
+                createParentRef = task.ref
+                done("createChild")
+              })
               return
 
             case "insert":
@@ -524,10 +551,11 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
 
     if (result === "cancel") return
 
-    if (result === "create") {
-      const createdTask = await config.onCreate()
+    if (result === "create" || result === "createChild") {
+      const createdTask = await config.onCreate(result === "createChild" ? createParentRef : undefined)
       if (createdTask) {
         displayTasks.unshift(createdTask)
+        if (createdTask.parentRef) expandedRefs.add(createdTask.parentRef)
         rememberedSelectedRef = createdTask.ref
       }
       continue

@@ -1,5 +1,11 @@
 export type TaskStatus = "open" | "inProgress" | "blocked" | "deferred" | "closed"
 
+export interface TaskRelation {
+  ref: string
+  title?: string
+  status?: TaskStatus
+}
+
 export interface Task {
   ref: string
   id?: string
@@ -12,6 +18,10 @@ export interface Task {
   createdAt?: string
   dueAt?: string
   updatedAt?: string
+  parentRef?: string
+  childCount?: number
+  blockers?: TaskRelation[]
+  dependents?: TaskRelation[]
   dependencyCount?: number
   dependentCount?: number
   commentCount?: number
@@ -89,12 +99,21 @@ function firstLine(text: string | undefined): string | undefined {
   return line && line.length > 0 ? line : undefined
 }
 
+function formatBlockerSummary(task: Task): string | undefined {
+  const unresolved = task.blockers?.filter(blocker => blocker.status !== "closed") ?? []
+  if (unresolved.length === 0) return undefined
+  const shown = unresolved.slice(0, 2).map(blocker => blocker.ref).join(",")
+  const remaining = unresolved.length - 2
+  return `← ${shown}${remaining > 0 ? ` +${remaining}` : ""}`
+}
+
 function buildTaskListElements(task: Task): TaskListElements {
+  const blockerSummary = formatBlockerSummary(task)
   return {
     id: task.id ? stripIdPrefix(task.id) : undefined,
     title: task.title,
     status: formatTaskStatusSymbol(task.status),
-    type: formatTaskTypeCode(task.taskType),
+    type: `${formatTaskTypeCode(task.taskType)}${blockerSummary ? ` ${blockerSummary}` : ""}`,
     summary: firstLine(task.description),
   }
 }

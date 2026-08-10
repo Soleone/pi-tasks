@@ -235,6 +235,7 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
 
   return {
     id: "beads",
+    capabilities: { hierarchy: "none", dependencies: "none" },
     statusMap: STATUS_MAP,
     taskTypes: TASK_TYPES,
     priorities: PRIORITIES,

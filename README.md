@@ -20,10 +20,15 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 
 ### List view
 
+- `g` to toggle between flat and grouped hierarchy modes
+- `e` to expand or collapse the selected parent in grouped mode
+- `n` to create a child under the selected task
 - `d` to open task details
 - `Enter` to work off a task
 - `Tab` to insert task details in prompt and close Tasks UI
-- `c` to create a new task
+- `c` to create a root task
+
+Grouped mode shows root tasks first and reveals indented descendants on demand. Searching in grouped mode automatically includes the ancestor path to matching descendants. Blocked rows include blocker refs, and the preview shows blocker titles and whether each blocker is open, closed, or missing.
 
 ### Edit view
 
@@ -42,6 +47,32 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
 - `tq` - Uses the `tq` cli to manage tasks in a `.tq/tasks.jsonl` file. Automatically preferred when a `.tq` directory is detected.
 - [beads](https://github.com/steveyegge/beads) - Uses the `bd` cli to manage tasks into a `.beads` directory containing multiple files.
 - `todo-md` - Creates or reads a `TODO.md` file with different sections to emulate priority.
+
+### Relationships
+
+Parent/child hierarchy and blocked-by dependencies are independent: a child is not automatically blocked by its parent. Any task may be a parent, although the `epic` type is useful for groups.
+
+| Backend | Hierarchy | Blocked by |
+| --- | --- | --- |
+| `sq` / `tq` | `metadata.pi_tasks.parentRef` | Native `blocked_by` |
+| `todo-md` | Nested checklist indentation | Not supported |
+| `beads` | Not yet exposed by this extension | Not yet exposed by this extension |
+
+Pi-tasks metadata is always namespaced under `pi_tasks`; sq/tq hierarchy therefore uses:
+
+```json
+{"pi_tasks":{"taskType":"epic","parentRef":"parent-id"}}
+```
+
+Nested TODO.md tasks use two spaces per level. Non-checklist nested bullets remain task descriptions:
+
+```md
+- [ ] **Parent**
+  - [ ] **Child**
+    - Child description
+```
+
+For local UI testing, `scripts/seed-hierarchy-demo.sh` creates an idempotent sq demo epic with children, a grandchild, resolved and unresolved blockers, and a two-blocker task.
 
 ## Optional env vars:
 

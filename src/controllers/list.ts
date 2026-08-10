@@ -15,7 +15,10 @@ export type ListIntent =
   | { type: "setPriority"; priority: string }
   | { type: "scrollDescription"; delta: number }
   | { type: "toggleType" }
+  | { type: "toggleGrouping" }
+  | { type: "toggleExpanded" }
   | { type: "create" }
+  | { type: "createChild" }
   | { type: "insert" }
   | { type: "delegate" }
 
@@ -24,6 +27,7 @@ export interface ListControllerState {
   filtered: boolean
   allowSearch: boolean
   allowPriority: boolean
+  allowHierarchy: boolean
   closeKeys: string[]
   priorities: string[]
   priorityHotkeys?: Record<string, string>
@@ -167,9 +171,30 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
+    help: "g group",
+    showInHelp: state => state.allowHierarchy,
+    match: (data, state) => state.allowHierarchy && (data === "g" || data === "G"),
+    intent: () => ({ type: "toggleGrouping" }),
+  },
+  {
+    context: "default",
+    help: "e expand",
+    showInHelp: state => state.allowHierarchy,
+    match: (data, state) => state.allowHierarchy && (data === "e" || data === "E"),
+    intent: () => ({ type: "toggleExpanded" }),
+  },
+  {
+    context: "default",
     help: "c create",
     match: (data) => data === "c" || data === "C",
     intent: () => ({ type: "create" }),
+  },
+  {
+    context: "default",
+    help: "n child",
+    showInHelp: state => state.allowHierarchy,
+    match: (data, state) => state.allowHierarchy && (data === "n" || data === "N"),
+    intent: () => ({ type: "createChild" }),
   },
   {
     context: "default",
