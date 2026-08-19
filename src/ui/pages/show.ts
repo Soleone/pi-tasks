@@ -13,6 +13,7 @@ import {
   type HeaderStatus,
 } from "../../controllers/show.ts"
 import { buildTaskIdentityText, buildTaskListTextParts, formatTaskTypeCode, type Task, type TaskStatus } from "../../models/task.ts"
+import type { TaskAdapterCapabilities } from "../../backend/api.ts"
 import { BlurEditorField } from "../components/blur-editor.ts"
 import { KEYBOARD_HELP_PADDING_X, formatKeyboardHelp } from "../components/keyboard-help.ts"
 import { MinHeightContainer } from "../components/min-height.ts"
@@ -27,6 +28,8 @@ interface ShowTaskFormOptions {
   mode: FormMode
   subtitle: string
   task: Task
+  relationshipCapabilities?: TaskAdapterCapabilities
+  relationshipCandidates?: Task[]
   closeKeys: string[]
   cycleStatus: (status: TaskStatus) => TaskStatus
   cycleTaskType: (taskType: string | undefined) => string
@@ -141,6 +144,10 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
   let descValue = task.description ?? ""
   let statusValue = task.status
   let priorityValue = task.priority
+  let parentRefValue = task.parentRef
+  let blockedByValue = (task.blockers ?? []).map(blocker => blocker.ref)
+  const relationshipCapabilities = options.relationshipCapabilities ?? { hierarchy: "none", dependencies: "none" }
+  const relationshipCandidates = options.relationshipCandidates ?? []
 
   return ctx.ui.custom<TaskFormResult>((tui: any, theme: any, _kb: any, done: any) => {
     const container = new Container()
@@ -157,6 +164,8 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
     const selectedTaskText = new Text("", 0, 0)
     const titleLabel = new Text("", 0, 0)
     const descLabel = new Text("", 0, 0)
+    const parentRelationText = new Text("", 0, 0)
+    const blockerRelationText = new Text("", 0, 0)
     const helpText = new ReservedLineText(KEYBOARD_HELP_PADDING_X)
 
     let focus: FormFocus = mode === "create" ? "title" : "nav"
@@ -214,6 +223,8 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
       status: statusValue,
       priority: priorityValue,
       taskType: taskTypeValue,
+      parentRef: parentRefValue,
+      blockedBy: [...blockedByValue],
     })
 
     let lastSavedDraft: FormDraft = currentDraft()
@@ -288,6 +299,57 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
       void triggerSave()
     }
 
+    let relationshipPickerOpen = false
+    const candidateTasks = relationshipCandidates.filter(candidate => candidate.ref !== task.ref)
+    const candidateLabel = (candidate: Task): string => `${candidate.ref} • ${candidate.title}`
+
+    const chooseParent = async () => {
+      if (relationshipCapabilities.hierarchy === "none") return
+      if (candidateTasks.length === 0) {
+        ctx.ui.notify("No other tasks are available as a parent", "warning")
+        return
+      }
+      relationshipPickerOpen = true
+      try {
+        const labels = ["(no parent)", ...candidateTasks.map(candidateLabel)]
+        const selected = await ctx.ui.select("Parent task", labels)
+        if (!selected) return
+        parentRefValue = selected === "(no parent)"
+          ? undefined
+          : candidateTasks.find(candidate => candidateLabel(candidate) === selected)?.ref
+        renderLayout()
+        triggerAutoSave()
+      } finally {
+        relationshipPickerOpen = false
+      }
+    }
+
+    const chooseBlockers = async () => {
+      if (relationshipCapabilities.dependencies === "none") return
+      if (candidateTasks.length === 0) {
+        ctx.ui.notify("No other tasks are available as blockers", "warning")
+        return
+      }
+      relationshipPickerOpen = true
+      try {
+        const selectedRefs = new Set(blockedByValue)
+        while (true) {
+          const labels = ["Done", ...candidateTasks.map(candidate => `${selectedRefs.has(candidate.ref) ? "[x]" : "[ ]"} ${candidateLabel(candidate)}`)]
+          const selected = await ctx.ui.select("Blocked by (toggle, then Done)", labels)
+          if (!selected || selected === "Done") break
+          const candidate = candidateTasks.find(item => selected.endsWith(candidateLabel(item)))
+          if (!candidate) continue
+          if (selectedRefs.has(candidate.ref)) selectedRefs.delete(candidate.ref)
+          else selectedRefs.add(candidate.ref)
+        }
+        blockedByValue = [...selectedRefs]
+        renderLayout()
+        triggerAutoSave()
+      } finally {
+        relationshipPickerOpen = false
+      }
+    }
+
     const exitForm = (action: TaskFormAction) => {
       void (async () => {
         if ((saving || !isSameDraft(currentDraft(), lastSavedDraft)) && canPersistCurrentDraft()) {
@@ -320,8 +382,22 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
       titleLabel.setText(fieldLabel(theme, "Title", focus === "title"))
       descLabel.setText(fieldLabel(theme, "Description", focus === "desc"))
 
+      const parent = parentRefValue
+        ? relationshipCandidates.find(candidate => candidate.ref === parentRefValue)
+        : undefined
+      parentRelationText.setText(relationshipCapabilities.hierarchy === "none"
+        ? ""
+        : theme.fg("muted", `Parent: ${parent?.title ? `${parent.title} (${parentRefValue})` : (parentRefValue ?? "none")}`))
+      const blockerLabels = blockedByValue.map(ref => {
+        const candidate = relationshipCandidates.find(item => item.ref === ref)
+        return candidate?.title ? `${candidate.title} (${ref})` : ref
+      })
+      blockerRelationText.setText(relationshipCapabilities.dependencies === "none"
+        ? ""
+        : theme.fg("muted", `Blocked by: ${blockerLabels.length > 0 ? blockerLabels.join(", ") : "none"}`))
+
       const primaryHelp = buildPrimaryHelpText(focus)
-      const secondaryHelp = buildSecondaryHelpText(focus, priorities, priorityHotkeys)
+      const secondaryHelp = buildSecondaryHelpText(focus, priorities, priorityHotkeys, relationshipCapabilities)
       const combinedHelp = secondaryHelp ? `${primaryHelp} • ${secondaryHelp}` : primaryHelp
 
       helpText.setText(formatKeyboardHelp(theme, combinedHelp))
@@ -337,6 +413,8 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
     formContainer.addChild(new Spacer(1))
     formContainer.addChild(titleLabel)
     formContainer.addChild(titleEditor)
+    formContainer.addChild(parentRelationText)
+    formContainer.addChild(blockerRelationText)
     formContainer.addChild(new Spacer(1))
     formContainer.addChild(descLabel)
     formContainer.addChild(descEditorField)
@@ -401,6 +479,8 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
     }
 
     const handleNavInput = (data: string) => {
+      if (relationshipPickerOpen) return
+
       if (matchesKey(data, Key.enter)) {
         void triggerSave()
         return
@@ -414,6 +494,16 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
 
       if (matchesKey(data, Key.escape) || matchesKey(data, Key.left) || data === "a" || data === "A") {
         exitForm("back")
+        return
+      }
+
+      if (data === "p" || data === "P") {
+        void chooseParent()
+        return
+      }
+
+      if (data === "b" || data === "B") {
+        void chooseBlockers()
         return
       }
 

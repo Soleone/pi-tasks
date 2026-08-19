@@ -89,6 +89,15 @@ export function toKebabCase(value: string): string {
   return value.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase()
 }
 
+export function hasUnresolvedBlockers(task: Pick<Task, "blockers" | "status">): boolean {
+  return task.blockers?.some(blocker => blocker.status !== "closed") ?? false
+}
+
+export function displayTaskStatus(task: Task): TaskStatus {
+  if (task.status === "open" && hasUnresolvedBlockers(task)) return "blocked"
+  return task.status
+}
+
 export function formatTaskStatusSymbol(status: TaskStatus): string {
   return STATUS_SYMBOLS[status] ?? "?"
 }
@@ -112,7 +121,7 @@ function buildTaskListElements(task: Task): TaskListElements {
   return {
     id: task.id ? stripIdPrefix(task.id) : undefined,
     title: task.title,
-    status: formatTaskStatusSymbol(task.status),
+    status: formatTaskStatusSymbol(displayTaskStatus(task)),
     type: `${formatTaskTypeCode(task.taskType)}${blockerSummary ? ` ${blockerSummary}` : ""}`,
     summary: firstLine(task.description),
   }

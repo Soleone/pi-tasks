@@ -263,7 +263,10 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
 
         previewTitleText.setText(theme.fg("accent", theme.bold(task.title)))
         const relationshipLines: string[] = []
-        if (task.parentRef) relationshipLines.push(`Parent: ${task.parentRef}`)
+        if (task.parentRef) {
+          const parent = displayTasks.find(candidate => candidate.ref === task.parentRef)
+          relationshipLines.push(`Parent: ${parent?.title ? `${parent.title} (${task.parentRef})` : `${task.parentRef} (unknown)`}`)
+        }
         if (task.blockers?.length) {
           const blockers = task.blockers.map(blocker => `${blocker.ref}${blocker.title ? ` ${blocker.title}` : ""} (${blocker.status ?? "unknown"})`)
           relationshipLines.push(`Blocked by: ${blockers.join(", ")}`)

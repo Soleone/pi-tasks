@@ -4,6 +4,7 @@ import { existsSync } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import type { Task, TaskStatus } from "../../models/task.ts"
+import { wouldCreateParentCycle } from "../../models/task-hierarchy.ts"
 import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskStatusMap, TaskUpdate } from "../api.ts"
 
 const DEFAULT_TODO_FILES = ["TODO.md", "todo.md"] as const
@@ -446,12 +447,25 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
     },
 
     async update(ref: string, update: TaskUpdate): Promise<void> {
+      if (update.blockedBy !== undefined) {
+        throw new Error("The TODO.md backend does not support blocked-by dependencies")
+      }
+
       const document = await getDocument()
       const index = document.tasks.findIndex(task => task.ref === ref)
       if (index === -1) throw new Error(`Task not found: ${ref}`)
 
       const updatedTasks = [...document.tasks]
       const currentTask = updatedTasks[index]!
+      if (update.parentRef !== undefined && update.parentRef !== null) {
+        if (!updatedTasks.some(task => task.ref === update.parentRef)) {
+          throw new Error(`Parent task not found: ${update.parentRef}`)
+        }
+        const domainTasks = updatedTasks.map(toTask)
+        if (wouldCreateParentCycle(domainTasks, ref, update.parentRef)) {
+          throw new Error("A task cannot be its own parent or a descendant of itself")
+        }
+      }
       let taskUpdate = update
 
       if (update.priority !== undefined && currentTask.parentRef) {
@@ -474,7 +488,14 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
     },
 
     async create(input: CreateTaskInput): Promise<Task> {
+      if (input.blockedBy !== undefined) {
+        throw new Error("The TODO.md backend does not support blocked-by dependencies")
+      }
+
       const document = await getDocument()
+      if (input.parentRef && !document.tasks.some(task => task.ref === input.parentRef)) {
+        throw new Error(`Parent task not found: ${input.parentRef}`)
+      }
 
       const status = normalizeStatus(input.status)
       const existingRefs = new Set(document.tasks.map(task => task.ref))

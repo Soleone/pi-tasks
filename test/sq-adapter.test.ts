@@ -34,7 +34,8 @@ test("sq list preserves hierarchy and resolves blocker details", async () => {
   assert.deepEqual(calls[0], ["list", "--all", "--json"])
   assert.equal(epic.childCount, 1)
   assert.equal(child.parentRef, "epic")
-  assert.equal(child.status, "blocked")
+  // Blocked-by is readiness metadata; the lifecycle status remains open.
+  assert.equal(child.status, "open")
   assert.deepEqual(child.blockers, [
     { ref: "done", title: "Finished prerequisite", status: "closed" },
     { ref: "missing", title: undefined, status: undefined },

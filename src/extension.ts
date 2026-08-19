@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
 import initializeAdapter from "./backend/resolver.ts"
 import type { Task, TaskStatus } from "./models/task.ts"
+import { wouldCreateDependencyCycle, wouldCreateParentCycle } from "./models/task-hierarchy.ts"
 import { buildTaskWorkPrompt, serializeTask } from "./lib/task-serialization.ts"
 import { showTaskList } from "./ui/pages/list.ts"
 import { showTaskForm } from "./ui/pages/show.ts"
@@ -109,7 +110,9 @@ function buildTaskUpdate(previous: Task, next: {
   status: TaskStatus
   priority: string | undefined
   taskType: string | undefined
-}): TaskUpdate {
+  parentRef?: string
+  blockedBy?: string[]
+}, allTasks: Task[] = []): TaskUpdate {
   const update: TaskUpdate = {}
 
   const nextTitle = next.title.trim()
@@ -133,6 +136,25 @@ function buildTaskUpdate(previous: Task, next: {
     update.taskType = next.taskType || "task"
   }
 
+  if (next.parentRef !== previous.parentRef) {
+    if (wouldCreateParentCycle(allTasks, previous.ref, next.parentRef)) {
+      throw new Error("A task cannot be its own parent or a descendant of itself")
+    }
+    update.parentRef = next.parentRef ?? null
+  }
+
+  if (next.blockedBy !== undefined) {
+    const previousBlockers = (previous.blockers ?? []).map(blocker => blocker.ref).sort()
+    const nextBlockers = [...new Set(next.blockedBy)].sort()
+    if (nextBlockers.includes(previous.ref)) throw new Error("A task cannot block itself")
+    if (wouldCreateDependencyCycle(allTasks, previous.ref, nextBlockers)) {
+      throw new Error("Blocked-by relationships cannot contain a cycle")
+    }
+    if (JSON.stringify(previousBlockers) !== JSON.stringify(nextBlockers)) {
+      update.blockedBy = nextBlockers
+    }
+  }
+
   return update
 }
 
@@ -148,7 +170,10 @@ function applyDraftToTask(
     status: TaskStatus
     priority: string | undefined
     taskType: string | undefined
+    parentRef?: string
+    blockedBy?: string[]
   },
+  candidates: Task[] = [],
 ): Task {
   const nextTask: Task = {
     ...task,
@@ -167,6 +192,19 @@ function applyDraftToTask(
     nextTask.taskType = draft.taskType
   } else {
     delete nextTask.taskType
+  }
+
+  if (draft.parentRef !== undefined) nextTask.parentRef = draft.parentRef
+  else delete nextTask.parentRef
+
+  if (draft.blockedBy !== undefined) {
+    const byRef = new Map(candidates.map(candidate => [candidate.ref, candidate]))
+    nextTask.blockers = draft.blockedBy.map(ref => ({
+      ref,
+      title: byRef.get(ref)?.title,
+      status: byRef.get(ref)?.status,
+    }))
+    nextTask.dependencyCount = nextTask.blockers.length
   }
 
   return nextTask
@@ -245,13 +283,20 @@ export default function registerExtension(pi: ExtensionAPI) {
     await backend.update(ref, update)
   }
 
-  async function editTask(ctx: ExtensionCommandContext, ref: string, fromList?: Task): Promise<EditTaskResult> {
+  async function editTask(
+    ctx: ExtensionCommandContext,
+    ref: string,
+    fromList?: Task,
+    allTasks: Task[] = [],
+  ): Promise<EditTaskResult> {
     let task = await getTaskForEdit(ref, fromList)
 
     const formResult = await showTaskForm(ctx, {
       mode: "edit",
       subtitle: "Edit",
       task,
+      relationshipCapabilities: backend.capabilities,
+      relationshipCandidates: allTasks,
       closeKeys: TASK_LIST_SHORTCUTS,
       cycleStatus: nextStatus,
       cycleTaskType: nextTaskType,
@@ -265,7 +310,9 @@ export default function registerExtension(pi: ExtensionAPI) {
           status: draft.status,
           priority: draft.priority,
           taskType: draft.taskType,
-        })
+          parentRef: draft.parentRef,
+          blockedBy: draft.blockedBy,
+        }, allTasks)
 
         if (!hasTaskUpdate(update)) return false
 
@@ -276,7 +323,9 @@ export default function registerExtension(pi: ExtensionAPI) {
           status: draft.status,
           priority: draft.priority,
           taskType: draft.taskType,
-        })
+          parentRef: draft.parentRef,
+          blockedBy: draft.blockedBy,
+        }, allTasks)
         return true
       },
     })
@@ -287,7 +336,7 @@ export default function registerExtension(pi: ExtensionAPI) {
     }
   }
 
-  async function createTask(ctx: ExtensionCommandContext, parentRef?: string): Promise<Task | null> {
+  async function createTask(ctx: ExtensionCommandContext, parentRef?: string, allTasks: Task[] = []): Promise<Task | null> {
     let createdTask: Task | null = null
 
     await showTaskForm(ctx, {
@@ -302,6 +351,8 @@ export default function registerExtension(pi: ExtensionAPI) {
         taskType: defaultTaskType(backend.taskTypes),
         parentRef,
       },
+      relationshipCapabilities: backend.capabilities,
+      relationshipCandidates: allTasks,
       closeKeys: TASK_LIST_SHORTCUTS,
       cycleStatus: nextStatus,
       cycleTaskType: nextTaskType,
@@ -321,7 +372,8 @@ export default function registerExtension(pi: ExtensionAPI) {
             status: draft.status,
             priority: draft.priority,
             taskType: draft.taskType,
-            parentRef,
+            parentRef: draft.parentRef,
+            blockedBy: draft.blockedBy,
           })
           return true
         }
@@ -332,6 +384,8 @@ export default function registerExtension(pi: ExtensionAPI) {
           status: draft.status,
           priority: draft.priority,
           taskType: draft.taskType,
+          parentRef: draft.parentRef,
+          blockedBy: draft.blockedBy,
         })
 
         if (!hasTaskUpdate(update)) return false
@@ -343,6 +397,8 @@ export default function registerExtension(pi: ExtensionAPI) {
           status: draft.status,
           priority: draft.priority,
           taskType: draft.taskType,
+          parentRef: draft.parentRef,
+          blockedBy: draft.blockedBy,
         })
         return true
       },
@@ -374,8 +430,8 @@ export default function registerExtension(pi: ExtensionAPI) {
         onUpdateTask: updateTask,
         onWork: (task) => pi.sendUserMessage(buildTaskWorkPrompt(task)),
         onInsert: (task) => ctx.ui.pasteToEditor(`${serializeTask(task)} `),
-        onEdit: (ref, task) => editTask(ctx, ref, task),
-        onCreate: parentRef => createTask(ctx, parentRef),
+        onEdit: (ref, task) => editTask(ctx, ref, task, tasks),
+        onCreate: parentRef => createTask(ctx, parentRef, tasks),
       })
     } catch (e) {
       ctx.ui.setStatus("tasks", undefined)

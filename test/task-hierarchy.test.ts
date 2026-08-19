@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { projectTaskList, wouldCreateParentCycle } from "../src/models/task-hierarchy.ts"
+import { projectTaskList, wouldCreateDependencyCycle, wouldCreateParentCycle } from "../src/models/task-hierarchy.ts"
 import { serializeTask } from "../src/lib/task-serialization.ts"
 import { buildTaskListTextParts, type Task } from "../src/models/task.ts"
 
@@ -74,6 +74,16 @@ test("serialized task handoff preserves relationship refs", () => {
   })
   assert.match(serialized, /parent=epic/)
   assert.match(serialized, /blocked-by=api/)
+})
+
+test("dependency cycle validation rejects self and transitive cycles", () => {
+  const dependencyTasks: Task[] = [
+    { ref: "api", title: "API", status: "open", blockers: [{ ref: "schema" }] },
+    { ref: "schema", title: "Schema", status: "open" },
+  ]
+  assert.equal(wouldCreateDependencyCycle(dependencyTasks, "schema", ["api"]), true)
+  assert.equal(wouldCreateDependencyCycle(dependencyTasks, "api", ["api"]), true)
+  assert.equal(wouldCreateDependencyCycle(dependencyTasks, "schema", ["missing"]), false)
 })
 
 test("parent cycle validation rejects self and descendant parents", () => {

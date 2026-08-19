@@ -54,6 +54,12 @@ const IN_PROGRESS_TASK_LIST_ARGS = [
   "--json",
 ]
 
+interface BeadsDependency {
+  issue_id?: string
+  depends_on_id?: string
+  type?: string
+}
+
 interface BeadsIssue {
   id: string
   title: string
@@ -69,6 +75,7 @@ interface BeadsIssue {
   dependency_count?: number
   dependent_count?: number
   comment_count?: number
+  dependencies?: BeadsDependency[]
 }
 
 function toPriorityLabel(value: number | undefined): string | undefined {
@@ -105,7 +112,17 @@ function toBackendStatus(status: TaskStatus): string {
   return mapped
 }
 
-function toTask(beadsIssue: BeadsIssue): Task {
+function toTask(beadsIssue: BeadsIssue, issuesById: ReadonlyMap<string, BeadsIssue> = new Map()): Task {
+  const blockers = (beadsIssue.dependencies ?? [])
+    .filter(dependency => dependency.type === "blocks" && dependency.depends_on_id)
+    .map(dependency => {
+      const blocker = issuesById.get(dependency.depends_on_id!)
+      return {
+        ref: dependency.depends_on_id!,
+        title: blocker?.title,
+        status: blocker ? fromBackendStatus(blocker.status) : undefined,
+      }
+    })
   const task: Task = {
     ref: beadsIssue.id,
     id: beadsIssue.id,
@@ -114,6 +131,8 @@ function toTask(beadsIssue: BeadsIssue): Task {
     status: fromBackendStatus(beadsIssue.status),
     owner: beadsIssue.owner,
     priority: toPriorityLabel(beadsIssue.priority),
+    blockers,
+    dependencyCount: blockers.length || beadsIssue.dependency_count,
   }
 
   if (beadsIssue.issue_type !== undefined) task.taskType = beadsIssue.issue_type
@@ -227,6 +246,10 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
   }
 
   async function update(ref: string, update: TaskUpdate): Promise<void> {
+    if (update.parentRef !== undefined || update.blockedBy !== undefined) {
+      throw new Error("The beads backend does not expose hierarchy or blocked-by editing yet")
+    }
+
     const args = fromTaskUpdateToBeadsArgs(update)
     if (args.length === 0) return
 
@@ -251,9 +274,11 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
       const openIssues = parseJsonArray<BeadsIssue>(openOut, "list open")
       const inProgressIssues = parseJsonArray<BeadsIssue>(inProgressOut, "list in_progress")
 
+      const allIssues = [...inProgressIssues, ...openIssues]
+      const issuesById = new Map(allIssues.map(issue => [issue.id, issue]))
       const dedupedById = new Map<string, Task>()
-      for (const issue of [...inProgressIssues, ...openIssues]) {
-        dedupedById.set(issue.id, toTask(issue))
+      for (const issue of allIssues) {
+        dedupedById.set(issue.id, toTask(issue, issuesById))
       }
 
       return sortActiveTasks([...dedupedById.values()]).slice(0, MAX_LIST_RESULTS)
@@ -270,6 +295,10 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
     update,
 
     async create(input: CreateTaskInput): Promise<Task> {
+      if (input.parentRef !== undefined || input.blockedBy !== undefined) {
+        throw new Error("The beads backend does not expose hierarchy or blocked-by editing yet")
+      }
+
       const title = input.title.trim()
       const status = input.status ?? "open"
       const selectedPriority = input.priority ?? PRIORITIES[Math.floor(PRIORITIES.length / 2)]

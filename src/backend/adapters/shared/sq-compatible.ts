@@ -150,14 +150,15 @@ function toTask(item: SqCompatibleItem, itemsById: ReadonlyMap<string, SqCompati
     }
   })
   const lifecycleStatus = fromBackendStatus(item.status)
-  const hasUnresolvedBlocker = blockers.some(blocker => blocker.status !== "closed")
 
   return {
     ref: item.id,
     id: item.id,
     title: item.title?.trim() || item.id,
     description: item.description ?? "",
-    status: lifecycleStatus === "open" && hasUnresolvedBlocker ? "blocked" : lifecycleStatus,
+    // `blocked_by` is readiness information, not the backend lifecycle state.
+    // Keep the native status intact and let the UI derive the blocked marker.
+    status: lifecycleStatus,
     priority: normalizePriority(item.priority),
     taskType: metadata.taskType,
     createdAt: item.created_at,
@@ -267,6 +268,9 @@ function initialize(pi: ExtensionAPI, options: SqCompatibleAdapterOptions): Task
     },
 
     async update(ref: string, update: TaskUpdate): Promise<void> {
+      if (update.parentRef === ref) throw new Error("A task cannot be its own parent")
+      if (update.blockedBy?.includes(ref)) throw new Error("A task cannot block itself")
+
       const args = ["edit", ref]
 
       if (update.title !== undefined) {

@@ -28,12 +28,16 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 - `Tab` to insert task details in prompt and close Tasks UI
 - `c` to create a root task
 
-Grouped mode shows root tasks first and reveals indented descendants on demand. Searching in grouped mode automatically includes the ancestor path to matching descendants. Blocked rows include blocker refs, and the preview shows blocker titles and whether each blocker is open, closed, or missing.
+Grouped mode shows root tasks first and reveals indented descendants on demand. Searching in grouped mode automatically includes the ancestor path to matching descendants. Blocked rows include unresolved blocker refs, and the preview shows blocker titles and whether each blocker is open, closed, or missing. The blocked marker is derived from blocker readiness without changing the backend lifecycle status.
 
 ### Edit view
 
 - `Tab` to switch focus between inputs
 - `Enter` to save
+- `p` to choose or clear the parent task when hierarchy is supported
+- `b` to toggle blocker tasks when blocked-by dependencies are supported
+
+Relationship pickers exclude the current task. Parent cycles, self-links, and dependency cycles are rejected before persistence; unsupported backend relationships are hidden and rejected by the adapter rather than silently discarded.
 
 ## Task backends
 
@@ -56,7 +60,7 @@ Parent/child hierarchy and blocked-by dependencies are independent: a child is n
 | --- | --- | --- |
 | `sq` / `tq` | `metadata.pi_tasks.parentRef` | Native `blocked_by` |
 | `todo-md` | Nested checklist indentation | Not supported |
-| `beads` | Not yet exposed by this extension | Not yet exposed by this extension |
+| `beads` | Not supported | Read-only when native blocker records are present |
 
 Pi-tasks metadata is always namespaced under `pi_tasks`; sq/tq hierarchy therefore uses:
 

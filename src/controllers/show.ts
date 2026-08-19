@@ -1,4 +1,5 @@
 import type { TaskStatus } from "../models/task.ts"
+import type { TaskAdapterCapabilities } from "../backend/api.ts"
 
 export type FormFocus = "nav" | "title" | "desc"
 export type FormMode = "edit" | "create"
@@ -9,6 +10,8 @@ export interface FormDraft {
   status: TaskStatus
   priority: string | undefined
   taskType: string | undefined
+  parentRef?: string
+  blockedBy?: string[]
 }
 
 type HeaderStatusColor = "dim" | "accent" | "warning"
@@ -28,6 +31,7 @@ export function normalizeDraft(draft: FormDraft): FormDraft {
   return {
     ...draft,
     title: draft.title.trim(),
+    blockedBy: draft.blockedBy ? [...draft.blockedBy].sort() : undefined,
   }
 }
 
@@ -39,7 +43,9 @@ export function isSameDraft(a: FormDraft, b: FormDraft): boolean {
     left.description === right.description &&
     left.status === right.status &&
     left.priority === right.priority &&
-    left.taskType === right.taskType
+    left.taskType === right.taskType &&
+    left.parentRef === right.parentRef &&
+    JSON.stringify(left.blockedBy ?? []) === JSON.stringify(right.blockedBy ?? [])
   )
 }
 
@@ -75,7 +81,12 @@ export function buildSecondaryHelpText(
   focus: FormFocus,
   priorities: string[],
   priorityHotkeys?: Record<string, string>,
+  relationshipCapabilities: TaskAdapterCapabilities = { hierarchy: "none", dependencies: "none" },
 ): string {
   if (focus !== "nav") return ""
-  return `space status • ${buildPriorityHelpText(priorities, priorityHotkeys)} • t type`
+  const relationships = [
+    relationshipCapabilities.hierarchy !== "none" ? "p parent" : "",
+    relationshipCapabilities.dependencies !== "none" ? "b blockers" : "",
+  ].filter(Boolean)
+  return ["space status", buildPriorityHelpText(priorities, priorityHotkeys), "t type", ...relationships].join(" • ")
 }
