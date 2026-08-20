@@ -1,4 +1,5 @@
 import { Key, matchesKey } from "@mariozechner/pi-tui"
+import type { TaskListScope } from "../backend/api.ts"
 
 export type ListIntent =
   | { type: "cancel" }
@@ -18,6 +19,7 @@ export type ListIntent =
   | { type: "toggleType" }
   | { type: "toggleGrouping" }
   | { type: "toggleExpanded" }
+  | { type: "toggleScope" }
   | { type: "create" }
   | { type: "createChild" }
   | { type: "insert" }
@@ -29,6 +31,7 @@ export interface ListControllerState {
   allowSearch: boolean
   allowPriority: boolean
   allowHierarchy: boolean
+  scope: TaskListScope
   closeKeys: string[]
   priorities: string[]
   priorityHotkeys?: Record<string, string>
@@ -209,6 +212,13 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     showInHelp: state => state.allowHierarchy,
     match: (data, state) => state.allowHierarchy && (data === "e" || data === "E"),
     intent: () => ({ type: "toggleExpanded" }),
+  },
+  {
+    context: "default",
+    category: "read",
+    help: (state) => (state.scope === "closed" ? "x active" : "x closed"),
+    match: (data) => data === "x" || data === "X",
+    intent: () => ({ type: "toggleScope" }),
   },
   {
     context: "default",

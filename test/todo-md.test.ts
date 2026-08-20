@@ -29,6 +29,29 @@ test("nested hierarchy round trips without turning descriptions into tasks", () 
   assert.equal(second.tasks[1]!.description, "- implementation note")
 })
 
+test("todo list scopes between open and archived tasks", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-tasks-todo-"))
+  const path = join(directory, "TODO.md")
+  await writeFile(path, `# Demo\n\n## Now\n\n- [ ] **Open task**\n\n## Archive\n\n- [x] **Done task**\n`, "utf8")
+  const previousPath = process.env.PI_TASKS_TODO_PATH
+  process.env.PI_TASKS_TODO_PATH = path
+  try {
+    const adapter = todoMdInitializer.initialize({} as never)
+    const active = await adapter.list()
+    assert.equal(active.length, 1)
+    assert.equal(active[0]!.title, "Open task")
+    assert.equal(active[0]!.status, "open")
+
+    const closed = await adapter.list("closed")
+    assert.equal(closed.length, 1)
+    assert.equal(closed[0]!.title, "Done task")
+    assert.equal(closed[0]!.status, "closed")
+  } finally {
+    if (previousPath === undefined) delete process.env.PI_TASKS_TODO_PATH
+    else process.env.PI_TASKS_TODO_PATH = previousPath
+  }
+})
+
 test("changing child priority moves its root tree so the update round trips", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pi-tasks-todo-"))
   const path = join(directory, "TODO.md")

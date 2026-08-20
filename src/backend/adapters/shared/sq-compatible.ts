@@ -4,6 +4,7 @@ import type {
   CreateTaskInput,
   TaskAdapter,
   TaskAdapterInitializer,
+  TaskListScope,
   TaskSessionContextMessage,
   TaskStatusMap,
   TaskUpdate,
@@ -244,12 +245,14 @@ function initialize(pi: ExtensionAPI, options: SqCompatibleAdapterOptions): Task
     priorityHotkeys: PRIORITY_HOTKEYS,
     sessionContextMessage: options.sessionContextMessage,
 
-    async list(): Promise<Task[]> {
+    async list(scope: TaskListScope = "active"): Promise<Task[]> {
       const out = await execCommand(["list", "--all", "--json"])
       const allItems = parseJsonArray<SqCompatibleItem>(out, "list all", options.command)
       const itemsById = new Map(allItems.map(item => [item.id, item]))
-      const activeItems = allItems.filter(item => item.status !== STATUS_MAP.closed)
-      const tasks = activeItems.map(item => toTask(item, itemsById))
+      const scopedItems = allItems.filter(item => (
+        scope === "closed" ? item.status === STATUS_MAP.closed : item.status !== STATUS_MAP.closed
+      ))
+      const tasks = scopedItems.map(item => toTask(item, itemsById))
       const childCounts = new Map<string, number>()
       for (const task of tasks) {
         if (task.parentRef) childCounts.set(task.parentRef, (childCounts.get(task.parentRef) ?? 0) + 1)

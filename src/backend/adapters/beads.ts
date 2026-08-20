@@ -7,6 +7,7 @@ import type {
   CreateTaskInput,
   TaskAdapter,
   TaskAdapterInitializer,
+  TaskListScope,
   TaskSessionContextMessage,
   TaskStatusMap,
   TaskUpdate,
@@ -49,6 +50,14 @@ const OPEN_TASK_LIST_ARGS = [
 const IN_PROGRESS_TASK_LIST_ARGS = [
   "list",
   "--status", STATUS_MAP.inProgress,
+  "--limit", String(MAX_LIST_RESULTS),
+  "--sort", "priority",
+  "--json",
+]
+
+const CLOSED_TASK_LIST_ARGS = [
+  "list",
+  "--status", STATUS_MAP.closed,
   "--limit", String(MAX_LIST_RESULTS),
   "--sort", "priority",
   "--json",
@@ -265,19 +274,20 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
     priorityHotkeys: PRIORITY_HOTKEYS,
     sessionContextMessage: SESSION_CONTEXT_MESSAGE,
 
-    async list(): Promise<Task[]> {
-      const [openOut, inProgressOut] = await Promise.all([
-        execBd(OPEN_TASK_LIST_ARGS),
-        execBd(IN_PROGRESS_TASK_LIST_ARGS),
-      ])
+    async list(scope: TaskListScope = "active"): Promise<Task[]> {
+      const scopeArgs = scope === "closed" ? [CLOSED_TASK_LIST_ARGS] : [OPEN_TASK_LIST_ARGS, IN_PROGRESS_TASK_LIST_ARGS]
+      const results = await Promise.all(scopeArgs.map(args => execBd(args)))
 
-      const openIssues = parseJsonArray<BeadsIssue>(openOut, "list open")
-      const inProgressIssues = parseJsonArray<BeadsIssue>(inProgressOut, "list in_progress")
+      const issues = scope === "closed"
+        ? parseJsonArray<BeadsIssue>(results[0]!, "list closed")
+        : [
+            ...parseJsonArray<BeadsIssue>(results[1]!, "list in_progress"),
+            ...parseJsonArray<BeadsIssue>(results[0]!, "list open"),
+          ]
 
-      const allIssues = [...inProgressIssues, ...openIssues]
-      const issuesById = new Map(allIssues.map(issue => [issue.id, issue]))
+      const issuesById = new Map(issues.map(issue => [issue.id, issue]))
       const dedupedById = new Map<string, Task>()
-      for (const issue of allIssues) {
+      for (const issue of issues) {
         dedupedById.set(issue.id, toTask(issue, issuesById))
       }
 

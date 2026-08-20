@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import type { Task, TaskStatus } from "../../models/task.ts"
 import { wouldCreateParentCycle } from "../../models/task-hierarchy.ts"
-import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskStatusMap, TaskUpdate } from "../api.ts"
+import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskListScope, TaskStatusMap, TaskUpdate } from "../api.ts"
 
 const DEFAULT_TODO_FILES = ["TODO.md", "todo.md"] as const
 const TODO_FILE_ENV = "PI_TASKS_TODO_PATH"
@@ -432,10 +432,10 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
       documentCache = null
     },
 
-    async list(): Promise<Task[]> {
+    async list(scope: TaskListScope = "active"): Promise<Task[]> {
       const document = await getDocument()
       return document.tasks
-        .filter(task => task.status === "open")
+        .filter(task => scope === "closed" ? task.status === "closed" : task.status === "open")
         .map(toTask)
     },
 

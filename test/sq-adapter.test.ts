@@ -42,6 +42,25 @@ test("sq list preserves hierarchy and resolves blocker details", async () => {
   ])
 })
 
+test("sq list scopes between active and closed tasks", async () => {
+  const { adapter, calls } = createAdapter([
+    { id: "open", title: "Open work", status: "pending", priority: 2 },
+    { id: "wip", title: "In progress", status: "in_progress", priority: 2 },
+    { id: "done", title: "Finished work", status: "closed", priority: 2 },
+  ])
+
+  const active = await adapter.list()
+  assert.deepEqual(active.map(task => task.ref), ["wip", "open"])
+  assert.deepEqual(active.map(task => task.status), ["inProgress", "open"])
+
+  const closed = await adapter.list("closed")
+  assert.deepEqual(closed.map(task => task.ref), ["done"])
+  assert.equal(closed[0]!.status, "closed")
+
+  assert.deepEqual(calls[0], ["list", "--all", "--json"])
+  assert.deepEqual(calls[1], ["list", "--all", "--json"])
+})
+
 test("sq show resolves closed blockers instead of reporting a false block", async () => {
   const { adapter } = createAdapter([
     { id: "child", title: "Child", status: "pending", blocked_by: ["done"] },

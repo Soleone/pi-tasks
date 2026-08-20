@@ -5,7 +5,7 @@ import { wouldCreateDependencyCycle, wouldCreateParentCycle } from "./models/tas
 import { buildTaskWorkPrompt, serializeTask } from "./lib/task-serialization.ts"
 import { showTaskList } from "./ui/pages/list.ts"
 import { showTaskForm } from "./ui/pages/show.ts"
-import type { TaskAdapterCapabilities, TaskUpdate } from "./backend/api.ts"
+import type { TaskAdapterCapabilities, TaskListScope, TaskUpdate } from "./backend/api.ts"
 
 const TASK_LIST_SHORTCUTS = ["ctrl+shift+r", "alt+x"]
 
@@ -283,8 +283,8 @@ export default function registerExtension(pi: ExtensionAPI) {
     backend.priorityHotkeys,
   )
 
-  async function listTasks(): Promise<Task[]> {
-    return backend.list()
+  async function listTasks(scope: TaskListScope = "active"): Promise<Task[]> {
+    return backend.list(scope)
   }
 
   async function showTask(ref: string): Promise<Task> {
@@ -432,6 +432,10 @@ export default function registerExtension(pi: ExtensionAPI) {
         onUpdateTask: updateTask,
         onWork: (task) => pi.sendUserMessage(buildTaskWorkPrompt(task)),
         onInsert: (task) => ctx.ui.pasteToEditor(`${serializeTask(task)} `),
+        onReload: async (scope) => {
+          backend.invalidateCache?.()
+          return backend.list(scope)
+        },
         onEdit: (ref, task) => editTask(ctx, ref, task, tasks),
         onCreate: parentRef => createTask(ctx, parentRef, tasks),
       })

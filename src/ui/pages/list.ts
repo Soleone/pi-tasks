@@ -2,7 +2,7 @@ import { DynamicBorder, type ExtensionCommandContext } from "@mariozechner/pi-co
 import { Container, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui"
 import type { Task, TaskStatus } from "../../models/task.ts"
 import { projectTaskList } from "../../models/task-hierarchy.ts"
-import type { TaskUpdate } from "../../backend/api.ts"
+import type { TaskListScope, TaskUpdate } from "../../backend/api.ts"
 import { DESCRIPTION_PART_SEPARATOR, buildListRowModel, decodeDescription, stripAnsi } from "../../models/list-item.ts"
 import { buildListHelpTexts, resolveListIntent, type ListControllerState } from "../../controllers/list.ts"
 import { KEYBOARD_HELP_PADDING_X, formatKeyboardHelp } from "../components/keyboard-help.ts"
@@ -32,6 +32,7 @@ export interface ListPageConfig {
   onUpdateTask: (ref: string, update: TaskUpdate) => Promise<void>
   onWork: (task: Task) => void
   onInsert: (task: Task) => void
+  onReload: (scope: TaskListScope) => Promise<Task[]>
   onEdit: (ref: string, task: Task | undefined) => Promise<{ updatedTask: Task | null; closeList: boolean }>
   onCreate: (parentRef?: string) => Promise<Task | null>
 }
@@ -63,6 +64,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
   const { title, subtitle, tasks, allowPriority = true, allowSearch = true, allowHierarchy = false } = config
 
   const displayTasks = [...tasks]
+  let scope: TaskListScope = "active"
   let filterTerm = config.filterTerm || ""
   let rememberedSelectedRef: string | undefined
   let grouped = false
@@ -295,13 +297,14 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         allowSearch,
         allowPriority,
         allowHierarchy,
+        scope,
         closeKeys: config.closeKeys,
         priorities: config.priorities,
         priorityHotkeys: config.priorityHotkeys,
       })
 
       const refreshDisplay = () => {
-        const modeSubtitle = `${subtitle ?? ""}${subtitle ? " • " : ""}${grouped ? "grouped" : "flat"}`
+        const modeSubtitle = `${subtitle ?? ""}${subtitle ? " • " : ""}${scope}${grouped ? " • grouped" : " • flat"}`
         titleText.setText(buildHeaderText(theme, title, modeSubtitle, searching, searchBuffer, filterTerm))
         const help = buildListHelpTexts(controllerState())
         helpText.setText(formatKeyboardHelp(theme, help.primary))
@@ -374,6 +377,22 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         updateDescPreview()
         container.invalidate()
         tui.requestRender()
+      }
+
+      const reloadTasks = (nextScope: TaskListScope) => {
+        ctx.ui.setStatus("tasks", nextScope === "closed" ? "Loading closed…" : "Loading…")
+        void config.onReload(nextScope)
+          .then(tasks => {
+            scope = nextScope
+            displayTasks.length = 0
+            displayTasks.push(...tasks)
+            filterTerm = ""
+            rebuildAndRender()
+          })
+          .catch(error => {
+            ctx.ui.notify(error instanceof Error ? error.message : String(error), "error")
+          })
+          .finally(() => ctx.ui.setStatus("tasks", undefined))
       }
 
       return {
@@ -462,6 +481,10 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
                 const newStatus = config.cycleStatus(task.status)
                 task.status = newStatus
                 void config.onUpdateTask(task.ref, { status: newStatus })
+                if ((newStatus === "closed") !== (scope === "closed")) {
+                  const idx = displayTasks.findIndex(i => i.ref === task.ref)
+                  if (idx !== -1) displayTasks.splice(idx, 1)
+                }
                 rebuildAndRender()
               })
               return
@@ -520,6 +543,10 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
               rebuildAndRender()
               return
 
+            case "toggleScope":
+              reloadTasks(scope === "closed" ? "active" : "closed")
+              return
+
             case "toggleExpanded":
               withSelectedTask((task) => {
                 const projected = projectedTasks().find(row => row.task.ref === task.ref)
@@ -561,7 +588,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
 
     if (result === "create" || result === "createChild") {
       const createdTask = await config.onCreate(result === "createChild" ? createParentRef : undefined)
-      if (createdTask) {
+      if (createdTask && (createdTask.status === "closed") === (scope === "closed")) {
         displayTasks.unshift(createdTask)
         if (createdTask.parentRef) expandedRefs.add(createdTask.parentRef)
         rememberedSelectedRef = createdTask.ref
