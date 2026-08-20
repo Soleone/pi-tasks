@@ -94,7 +94,9 @@ export function hasUnresolvedBlockers(task: Pick<Task, "blockers" | "status">): 
 }
 
 export function displayTaskStatus(task: Task): TaskStatus {
-  if (task.status === "open" && hasUnresolvedBlockers(task)) return "blocked"
+  if (task.status === "closed") return "closed"
+  if (hasUnresolvedBlockers(task)) return "blocked"
+  if (task.status === "blocked") return "open"
   return task.status
 }
 

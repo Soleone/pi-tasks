@@ -472,11 +472,11 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
         const byRef = new Map(updatedTasks.map((task, taskIndex) => [task.ref, taskIndex]))
         const seen = new Set<string>()
         let rootIndex = index
-        let parentRef = currentTask.parentRef
-        while (parentRef && byRef.has(parentRef) && !seen.has(parentRef)) {
+        while (true) {
+          const parentRef = updatedTasks[rootIndex]!.parentRef
+          if (!parentRef || seen.has(parentRef) || !byRef.has(parentRef)) break
           seen.add(parentRef)
           rootIndex = byRef.get(parentRef)!
-          parentRef = updatedTasks[rootIndex]!.parentRef
         }
         updatedTasks[rootIndex] = applyTaskUpdate(updatedTasks[rootIndex]!, { priority: update.priority })
         const { priority: _inheritedPriority, ...remainingUpdate } = update

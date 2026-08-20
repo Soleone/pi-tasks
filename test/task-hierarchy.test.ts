@@ -2,7 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { projectTaskList, wouldCreateDependencyCycle, wouldCreateParentCycle } from "../src/models/task-hierarchy.ts"
 import { buildTaskWorkPrompt, serializeTask } from "../src/lib/task-serialization.ts"
-import { buildTaskListTextParts, type Task } from "../src/models/task.ts"
+import { buildTaskListTextParts, displayTaskStatus, type Task } from "../src/models/task.ts"
 
 const tasks: Task[] = [
   { ref: "root", title: "Epic", status: "open", taskType: "epic" },
@@ -62,6 +62,22 @@ test("blocked row metadata names concrete unresolved blocker refs", () => {
   }
   assert.match(buildTaskListTextParts(task).meta, /← open-a,missing-c/)
   assert.doesNotMatch(buildTaskListTextParts(task).meta, /done-b/)
+  assert.equal(displayTaskStatus(task), "blocked")
+})
+
+test("resolved blockers clear a stale blocked lifecycle marker", () => {
+  assert.equal(displayTaskStatus({
+    ref: "resolved",
+    title: "Resolved",
+    status: "blocked",
+    blockers: [{ ref: "done", status: "closed" }],
+  }), "open")
+  assert.equal(displayTaskStatus({
+    ref: "working",
+    title: "Working",
+    status: "inProgress",
+    blockers: [{ ref: "open", status: "open" }],
+  }), "blocked")
 })
 
 test("serialized task handoff preserves relationship refs", () => {

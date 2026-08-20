@@ -5,7 +5,7 @@ import { wouldCreateDependencyCycle, wouldCreateParentCycle } from "./models/tas
 import { buildTaskWorkPrompt, serializeTask } from "./lib/task-serialization.ts"
 import { showTaskList } from "./ui/pages/list.ts"
 import { showTaskForm } from "./ui/pages/show.ts"
-import type { TaskUpdate } from "./backend/api.ts"
+import type { TaskAdapterCapabilities, TaskUpdate } from "./backend/api.ts"
 
 const TASK_LIST_SHORTCUTS = ["ctrl+shift+r", "alt+x"]
 
@@ -104,6 +104,21 @@ interface EditTaskResult {
   closeList: boolean
 }
 
+interface DraftRelationships {
+  parentRef?: string
+  blockedBy?: string[]
+}
+
+function supportedDraftRelationships(
+  draft: DraftRelationships,
+  capabilities: TaskAdapterCapabilities,
+): DraftRelationships {
+  const relationships: DraftRelationships = {}
+  if (capabilities.hierarchy !== "none") relationships.parentRef = draft.parentRef
+  if (capabilities.dependencies !== "none") relationships.blockedBy = draft.blockedBy
+  return relationships
+}
+
 function buildTaskUpdate(previous: Task, next: {
   title: string
   description: string
@@ -136,14 +151,14 @@ function buildTaskUpdate(previous: Task, next: {
     update.taskType = next.taskType || "task"
   }
 
-  if (next.parentRef !== previous.parentRef) {
+  if (Object.prototype.hasOwnProperty.call(next, "parentRef") && next.parentRef !== previous.parentRef) {
     if (wouldCreateParentCycle(allTasks, previous.ref, next.parentRef)) {
       throw new Error("A task cannot be its own parent or a descendant of itself")
     }
     update.parentRef = next.parentRef ?? null
   }
 
-  if (next.blockedBy !== undefined) {
+  if (Object.prototype.hasOwnProperty.call(next, "blockedBy") && next.blockedBy !== undefined) {
     const previousBlockers = (previous.blockers ?? []).map(blocker => blocker.ref).sort()
     const nextBlockers = [...new Set(next.blockedBy)].sort()
     if (nextBlockers.includes(previous.ref)) throw new Error("A task cannot block itself")
@@ -194,16 +209,23 @@ function applyDraftToTask(
     delete nextTask.taskType
   }
 
-  if (draft.parentRef !== undefined) nextTask.parentRef = draft.parentRef
-  else delete nextTask.parentRef
+  if (Object.prototype.hasOwnProperty.call(draft, "parentRef")) {
+    if (draft.parentRef !== undefined) nextTask.parentRef = draft.parentRef
+    else delete nextTask.parentRef
+  }
 
-  if (draft.blockedBy !== undefined) {
+  if (Object.prototype.hasOwnProperty.call(draft, "blockedBy") && draft.blockedBy !== undefined) {
     const byRef = new Map(candidates.map(candidate => [candidate.ref, candidate]))
-    nextTask.blockers = draft.blockedBy.map(ref => ({
-      ref,
-      title: byRef.get(ref)?.title,
-      status: byRef.get(ref)?.status,
-    }))
+    const existingByRef = new Map((task.blockers ?? []).map(blocker => [blocker.ref, blocker]))
+    nextTask.blockers = draft.blockedBy.map(ref => {
+      const candidate = byRef.get(ref)
+      const existing = existingByRef.get(ref)
+      return {
+        ref,
+        title: candidate?.title ?? existing?.title,
+        status: candidate?.status ?? existing?.status,
+      }
+    })
     nextTask.dependencyCount = nextTask.blockers.length
   }
 
@@ -304,28 +326,21 @@ export default function registerExtension(pi: ExtensionAPI) {
       priorities: backend.priorities,
       priorityHotkeys: backend.priorityHotkeys,
       onSave: async (draft) => {
-        const update = buildTaskUpdate(task, {
+        const relationships = supportedDraftRelationships(draft, backend.capabilities)
+        const nextDraft = {
           title: draft.title,
           description: draft.description,
           status: draft.status,
           priority: draft.priority,
           taskType: draft.taskType,
-          parentRef: draft.parentRef,
-          blockedBy: draft.blockedBy,
-        }, allTasks)
+          ...relationships,
+        }
+        const update = buildTaskUpdate(task, nextDraft, allTasks)
 
         if (!hasTaskUpdate(update)) return false
 
         await updateTask(ref, update)
-        task = applyDraftToTask(task, {
-          title: draft.title,
-          description: draft.description,
-          status: draft.status,
-          priority: draft.priority,
-          taskType: draft.taskType,
-          parentRef: draft.parentRef,
-          blockedBy: draft.blockedBy,
-        }, allTasks)
+        task = applyDraftToTask(task, nextDraft, allTasks)
         return true
       },
     })
@@ -365,41 +380,28 @@ export default function registerExtension(pi: ExtensionAPI) {
           throw new Error("Title is required")
         }
 
-        if (!createdTask) {
-          createdTask = await backend.create({
-            title,
-            description: draft.description,
-            status: draft.status,
-            priority: draft.priority,
-            taskType: draft.taskType,
-            parentRef: draft.parentRef,
-            blockedBy: draft.blockedBy,
-          })
-          return true
-        }
-
-        const update = buildTaskUpdate(createdTask, {
+        const relationships = supportedDraftRelationships(draft, backend.capabilities)
+        const nextDraft = {
           title,
           description: draft.description,
           status: draft.status,
           priority: draft.priority,
           taskType: draft.taskType,
-          parentRef: draft.parentRef,
-          blockedBy: draft.blockedBy,
-        })
+          ...relationships,
+        }
+
+        if (!createdTask) {
+          createdTask = await backend.create(nextDraft)
+          createdTask = applyDraftToTask(createdTask, nextDraft, allTasks)
+          return true
+        }
+
+        const update = buildTaskUpdate(createdTask, nextDraft, [...allTasks, createdTask])
 
         if (!hasTaskUpdate(update)) return false
 
         await updateTask(createdTask.ref, update)
-        createdTask = applyDraftToTask(createdTask, {
-          title,
-          description: draft.description,
-          status: draft.status,
-          priority: draft.priority,
-          taskType: draft.taskType,
-          parentRef: draft.parentRef,
-          blockedBy: draft.blockedBy,
-        })
+        createdTask = applyDraftToTask(createdTask, nextDraft, allTasks)
         return true
       },
     })

@@ -76,8 +76,11 @@ export function projectTaskList(tasks: Task[], options: TaskProjectionOptions): 
   const visit = (task: Task, depth: number) => {
     if (options.filterTerm && !searchMatches.has(task.ref)) return
     const descendants = children.get(task.ref) ?? []
-    const expanded = options.filterTerm ? descendants.some(child => searchMatches.has(child.ref)) : expandedRefs.has(task.ref)
-    result.push({ task, depth, hasChildren: descendants.length > 0, expanded })
+    const hasChildren = descendants.length > 0
+    const expanded = hasChildren && (options.filterTerm
+      ? descendants.some(child => searchMatches.has(child.ref))
+      : expandedRefs.has(task.ref))
+    result.push({ task, depth, hasChildren, expanded })
     if (!expanded) return
     for (const child of descendants) visit(child, depth + 1)
   }
