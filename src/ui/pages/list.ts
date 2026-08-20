@@ -269,7 +269,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         }
         if (task.blockers?.length) {
           const blockers = task.blockers.map(blocker => `${blocker.ref}${blocker.title ? ` ${blocker.title}` : ""} (${blocker.status ?? "unknown"})`)
-          relationshipLines.push(`Blocked by: ${blockers.join(", ")}`)
+          relationshipLines.push(`${theme.fg("warning", "Blocked by:")} ${blockers.join(", ")}`)
         }
         const descLines = [...relationshipLines, ...truncateDescription(task.description, 100)]
         descTextComponent.setText(buildDescText(descLines, lastWidth))

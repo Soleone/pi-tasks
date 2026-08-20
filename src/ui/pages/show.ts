@@ -394,7 +394,7 @@ export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTa
       })
       blockerRelationText.setText(relationshipCapabilities.dependencies === "none"
         ? ""
-        : theme.fg("muted", `Blocked by: ${blockerLabels.length > 0 ? blockerLabels.join(", ") : "none"}`))
+        : `${theme.fg("warning", "Blocked by:")} ${theme.fg("muted", blockerLabels.length > 0 ? blockerLabels.join(", ") : "none")}`)
 
       const primaryHelp = buildPrimaryHelpText(focus)
       const secondaryHelp = buildSecondaryHelpText(focus, priorities, priorityHotkeys, relationshipCapabilities)
