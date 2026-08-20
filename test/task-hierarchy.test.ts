@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { projectTaskList, wouldCreateDependencyCycle, wouldCreateParentCycle } from "../src/models/task-hierarchy.ts"
-import { serializeTask } from "../src/lib/task-serialization.ts"
+import { buildTaskWorkPrompt, serializeTask } from "../src/lib/task-serialization.ts"
 import { buildTaskListTextParts, type Task } from "../src/models/task.ts"
 
 const tasks: Task[] = [
@@ -74,6 +74,17 @@ test("serialized task handoff preserves relationship refs", () => {
   })
   assert.match(serialized, /parent=epic/)
   assert.match(serialized, /blocked-by=api/)
+})
+
+test("work prompt tells the agent to mark the task in progress first", () => {
+  const prompt = buildTaskWorkPrompt({
+    ref: "task-1",
+    id: "task-1",
+    title: "Implement the feature",
+    status: "open",
+  })
+
+  assert.match(prompt, /immediately mark this task as in progress before doing any other work/)
 })
 
 test("dependency cycle validation rejects self and transitive cycles", () => {

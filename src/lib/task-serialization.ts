@@ -41,6 +41,8 @@ export function buildTaskWorkPrompt(task: Task): string {
   const lines = [
     leadLine,
     "",
+    "Action required: immediately mark this task as in progress before doing any other work. Use the configured task backend and wait for the update to succeed.",
+    "",
     `Status: ${toKebabCase(task.status)}`,
     `Priority: ${task.priority ?? "unknown"}`,
   ]
