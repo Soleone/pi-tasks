@@ -4,7 +4,7 @@ import type { Task, TaskStatus } from "../../models/task.ts"
 import { projectTaskList } from "../../models/task-hierarchy.ts"
 import type { TaskUpdate } from "../../backend/api.ts"
 import { DESCRIPTION_PART_SEPARATOR, buildListRowModel, decodeDescription, stripAnsi } from "../../models/list-item.ts"
-import { buildListPrimaryHelpText, buildListSecondaryHelpText, resolveListIntent } from "../../controllers/list.ts"
+import { buildListHelpTexts, resolveListIntent, type ListControllerState } from "../../controllers/list.ts"
 import { KEYBOARD_HELP_PADDING_X, formatKeyboardHelp } from "../components/keyboard-help.ts"
 import { MinHeightContainer } from "../components/min-height.ts"
 import { ReservedLineText } from "../components/reserved-line-text.ts"
@@ -280,7 +280,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       headerContainer.addChild(titleText)
 
       const helpText = new ReservedLineText(KEYBOARD_HELP_PADDING_X)
-      const shortcutsText = new Text(formatKeyboardHelp(theme, buildListSecondaryHelpText()), KEYBOARD_HELP_PADDING_X, 0)
+      const shortcutsText = new ReservedLineText(KEYBOARD_HELP_PADDING_X)
 
       footerContainer.addChild(new DynamicBorder((s: string) => theme.fg("dim", s)))
       footerContainer.addChild(helpText)
@@ -289,19 +289,23 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
 
       renderListArea()
 
+      const controllerState = (): ListControllerState => ({
+        searching,
+        filtered: !!filterTerm,
+        allowSearch,
+        allowPriority,
+        allowHierarchy,
+        closeKeys: config.closeKeys,
+        priorities: config.priorities,
+        priorityHotkeys: config.priorityHotkeys,
+      })
+
       const refreshDisplay = () => {
         const modeSubtitle = `${subtitle ?? ""}${subtitle ? " • " : ""}${grouped ? "grouped" : "flat"}`
         titleText.setText(buildHeaderText(theme, title, modeSubtitle, searching, searchBuffer, filterTerm))
-        helpText.setText(formatKeyboardHelp(theme, buildListPrimaryHelpText({
-          searching,
-          filtered: !!filterTerm,
-          allowPriority,
-          allowSearch,
-          allowHierarchy,
-          closeKeys: config.closeKeys,
-          priorities: config.priorities,
-          priorityHotkeys: config.priorityHotkeys,
-        })))
+        const help = buildListHelpTexts(controllerState())
+        helpText.setText(formatKeyboardHelp(theme, help.primary))
+        shortcutsText.setText(formatKeyboardHelp(theme, help.secondary))
       }
       refreshDisplay()
 
@@ -382,16 +386,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         },
         invalidate: () => container.invalidate(),
         handleInput: (data: string) => {
-          const intent = resolveListIntent(data, {
-            searching,
-            filtered: !!filterTerm,
-            allowSearch,
-            allowPriority,
-            allowHierarchy,
-            closeKeys: config.closeKeys,
-            priorities: config.priorities,
-            priorityHotkeys: config.priorityHotkeys,
-          })
+          const intent = resolveListIntent(data, controllerState())
 
           switch (intent.type) {
             case "cancel":

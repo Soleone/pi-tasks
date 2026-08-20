@@ -35,9 +35,11 @@ export interface ListControllerState {
 }
 
 type ShortcutContext = "default" | "search"
+type ShortcutCategory = "read" | "edit"
 
 interface ShortcutDefinition {
   context: ShortcutContext
+  category: ShortcutCategory
   help?: string | ((state: ListControllerState) => string)
   showInHelp?: (state: ListControllerState) => boolean
   match: (data: string, state: ListControllerState) => boolean
@@ -93,52 +95,61 @@ const SCROLL_KEYS: Record<string, number> = {
 const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   {
     context: "search",
+    category: "read",
     match: (data, state) => matchesAnyShortcut(data, state.closeKeys),
     intent: () => ({ type: "cancel" }),
   },
   {
     context: "search",
+    category: "read",
     help: "esc cancel",
     match: (data) => matchesKey(data, Key.escape),
     intent: () => ({ type: "searchCancel" }),
   },
   {
     context: "search",
+    category: "read",
     help: "enter apply",
     match: (data) => matchesKey(data, Key.enter),
     intent: () => ({ type: "searchApply" }),
   },
   {
     context: "search",
+    category: "read",
     match: (data) => matchesKey(data, Key.backspace),
     intent: () => ({ type: "searchBackspace" }),
   },
   {
     context: "search",
+    category: "read",
     help: "type to search",
     match: (data) => isPrintable(data),
     intent: (data) => ({ type: "searchAppend", value: data }),
   },
   {
     context: "default",
+    category: "read",
     help: "w/s navigate",
     match: (data) => data in MOVE_KEYS,
     intent: (data) => ({ type: "moveSelection", delta: MOVE_KEYS[data] ?? 1 }),
   },
   {
     context: "default",
+    category: "edit",
     help: "enter work",
     match: (data) => matchesKey(data, Key.enter),
     intent: () => ({ type: "work" }),
   },
   {
     context: "default",
+    category: "read",
     help: "d details",
     match: (data) => data === "d" || data === "D" || matchesKey(data, Key.right),
     intent: () => ({ type: "edit" }),
   },
   {
     context: "default",
+    category: "edit",
     help: (state) => buildPriorityHelpText(state.priorities, state.priorityHotkeys),
     showInHelp: (state) => state.allowPriority,
     match: (data, state) => state.allowPriority && parsePriorityKey(data, state.priorities, state.priorityHotkeys) !== null,
@@ -149,6 +160,7 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
+    category: "read",
     help: "f find",
     showInHelp: (state) => state.allowSearch,
     match: (data, state) => state.allowSearch && (data === "f" || data === "F"),
@@ -156,28 +168,35 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
+    category: "edit",
+    help: "space status",
     match: (data) => data === " ",
     intent: () => ({ type: "toggleStatus" }),
   },
   {
     context: "default",
+    category: "edit",
     help: "del close",
     match: (data) => matchesKey(data, Key.delete),
     intent: () => ({ type: "closeTask" }),
   },
   {
     context: "default",
+    category: "read",
+    help: "j/k scroll",
     match: (data) => data in SCROLL_KEYS,
     intent: (data) => ({ type: "scrollDescription", delta: SCROLL_KEYS[data] ?? 1 }),
   },
   {
     context: "default",
+    category: "edit",
     help: "t type",
     match: (data) => data === "t" || data === "T",
     intent: () => ({ type: "toggleType" }),
   },
   {
     context: "default",
+    category: "read",
     help: "g group",
     showInHelp: state => state.allowHierarchy,
     match: (data, state) => state.allowHierarchy && (data === "g" || data === "G"),
@@ -185,6 +204,7 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
+    category: "read",
     help: "e expand",
     showInHelp: state => state.allowHierarchy,
     match: (data, state) => state.allowHierarchy && (data === "e" || data === "E"),
@@ -192,12 +212,14 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
+    category: "edit",
     help: "c create",
     match: (data) => data === "c" || data === "C",
     intent: () => ({ type: "create" }),
   },
   {
     context: "default",
+    category: "edit",
     help: "n child",
     showInHelp: state => state.allowHierarchy,
     match: (data, state) => state.allowHierarchy && (data === "n" || data === "N"),
@@ -205,17 +227,20 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   },
   {
     context: "default",
+    category: "edit",
     help: "tab insert",
     match: (data) => matchesKey(data, Key.tab),
     intent: () => ({ type: "insert" }),
   },
   {
     context: "default",
+    category: "read",
     match: (data) => data === "a" || data === "A" || matchesKey(data, Key.left),
     intent: () => ({ type: "back" }),
   },
   {
     context: "default",
+    category: "read",
     match: (data, state) => matchesAnyShortcut(data, state.closeKeys),
     intent: () => ({ type: "cancel" }),
   },
@@ -230,21 +255,31 @@ export function resolveListIntent(data: string, state: ListControllerState): Lis
   return { type: "delegate" }
 }
 
-export function buildListPrimaryHelpText(state: ListControllerState): string {
-  const context: ShortcutContext = state.searching ? "search" : "default"
-  const parts = SHORTCUT_DEFINITIONS
-    .filter(s => s.context === context)
-    .filter(s => !!s.help)
-    .filter(s => (s.showInHelp ? s.showInHelp(state) : true))
-    .map(s => (typeof s.help === "function" ? s.help(state) : s.help as string))
-
-  if (context === "default") {
-    parts.push(state.filtered ? "a/esc clear filter" : "a/esc back")
-  }
-
-  return parts.join(" • ")
+export interface ListHelpTexts {
+  /** First row: read-only actions (navigation, browsing, search). */
+  primary: string
+  /** Second row: actions that modify tasks. */
+  secondary: string
 }
 
-export function buildListSecondaryHelpText(): string {
-  return "space status • j/k scroll"
+export function buildListHelpTexts(state: ListControllerState): ListHelpTexts {
+  const helpRow = (context: ShortcutContext, category: ShortcutCategory): string =>
+    SHORTCUT_DEFINITIONS
+      .filter(s => s.context === context && s.category === category)
+      .filter(s => !!s.help)
+      .filter(s => (s.showInHelp ? s.showInHelp(state) : true))
+      .map(s => (typeof s.help === "function" ? s.help(state) : s.help as string))
+      .join(" • ")
+
+  const context: ShortcutContext = state.searching ? "search" : "default"
+  const readActions = helpRow(context, "read")
+  const primary =
+    context === "default"
+      ? `${readActions} • ${state.filtered ? "a/esc clear filter" : "a/esc back"}`
+      : readActions
+
+  return {
+    primary,
+    secondary: helpRow("default", "edit"),
+  }
 }
