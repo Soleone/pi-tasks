@@ -46,7 +46,9 @@ test("sq list scopes between active and closed tasks", async () => {
   const { adapter, calls } = createAdapter([
     { id: "open", title: "Open work", status: "pending", priority: 2 },
     { id: "wip", title: "In progress", status: "in_progress", priority: 2 },
-    { id: "done", title: "Finished work", status: "closed", priority: 2 },
+    { id: "old", title: "Oldest", status: "closed", priority: 2, updated_at: "2026-07-25T08:00:00.000Z" },
+    { id: "recent", title: "Most recent", status: "closed", priority: 2, updated_at: "2026-07-26T08:00:00.000Z" },
+    { id: "untimed", title: "No timestamp", status: "closed", priority: 2 },
   ])
 
   const active = await adapter.list()
@@ -54,8 +56,10 @@ test("sq list scopes between active and closed tasks", async () => {
   assert.deepEqual(active.map(task => task.status), ["inProgress", "open"])
 
   const closed = await adapter.list("closed")
-  assert.deepEqual(closed.map(task => task.ref), ["done"])
+  assert.deepEqual(closed.map(task => task.ref), ["recent", "old", "untimed"])
   assert.equal(closed[0]!.status, "closed")
+  assert.equal(closed[0]!.updatedAt, "2026-07-26T08:00:00.000Z")
+  assert.equal(closed[2]!.ref, "untimed")
 
   assert.deepEqual(calls[0], ["list", "--all", "--json"])
   assert.deepEqual(calls[1], ["list", "--all", "--json"])

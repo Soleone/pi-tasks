@@ -184,6 +184,23 @@ function taskPrioritySortRank(priority: string | undefined): number {
   return index >= 0 ? index : PRIORITIES.length
 }
 
+function closedTaskRecency(task: Task): number {
+  const time = Date.parse(task.closedAt ?? task.updatedAt ?? "")
+  return Number.isNaN(time) ? -Infinity : time
+}
+
+function sortClosedTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((left, right) => {
+    const recencyOrder = closedTaskRecency(right) - closedTaskRecency(left)
+    if (recencyOrder !== 0) return recencyOrder
+
+    const priorityOrder = taskPrioritySortRank(left.priority) - taskPrioritySortRank(right.priority)
+    if (priorityOrder !== 0) return priorityOrder
+
+    return left.ref.localeCompare(right.ref)
+  })
+}
+
 function sortActiveTasks(tasks: Task[]): Task[] {
   return [...tasks].sort((left, right) => {
     const statusOrder = taskStatusSortRank(left.status) - taskStatusSortRank(right.status)
@@ -258,7 +275,7 @@ function initialize(pi: ExtensionAPI, options: SqCompatibleAdapterOptions): Task
         if (task.parentRef) childCounts.set(task.parentRef, (childCounts.get(task.parentRef) ?? 0) + 1)
       }
       for (const task of tasks) task.childCount = childCounts.get(task.ref) ?? 0
-      return sortActiveTasks(tasks)
+      return scope === "closed" ? sortClosedTasks(tasks) : sortActiveTasks(tasks)
     },
 
     async show(ref: string): Promise<Task> {

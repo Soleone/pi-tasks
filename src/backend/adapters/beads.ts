@@ -81,6 +81,7 @@ interface BeadsIssue {
   due_at?: string
   due?: string
   updated_at?: string
+  closed_at?: string
   dependency_count?: number
   dependent_count?: number
   comment_count?: number
@@ -149,6 +150,7 @@ function toTask(beadsIssue: BeadsIssue, issuesById: ReadonlyMap<string, BeadsIss
   if (beadsIssue.due_at !== undefined) task.dueAt = beadsIssue.due_at
   if (beadsIssue.due !== undefined) task.dueAt = beadsIssue.due
   if (beadsIssue.updated_at !== undefined) task.updatedAt = beadsIssue.updated_at
+  if (beadsIssue.closed_at !== undefined) task.closedAt = beadsIssue.closed_at
   if (beadsIssue.dependency_count !== undefined) task.dependencyCount = beadsIssue.dependency_count
   if (beadsIssue.dependent_count !== undefined) task.dependentCount = beadsIssue.dependent_count
   if (beadsIssue.comment_count !== undefined) task.commentCount = beadsIssue.comment_count
@@ -166,6 +168,23 @@ function taskPrioritySortRank(priority: string | undefined): number {
   if (!priority) return PRIORITIES.length + 1
   const index = PRIORITIES.indexOf(priority)
   return index >= 0 ? index : PRIORITIES.length
+}
+
+function closedTaskRecency(task: Task): number {
+  const time = Date.parse(task.closedAt ?? task.updatedAt ?? "")
+  return Number.isNaN(time) ? -Infinity : time
+}
+
+function sortClosedTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((left, right) => {
+    const recencyOrder = closedTaskRecency(right) - closedTaskRecency(left)
+    if (recencyOrder !== 0) return recencyOrder
+
+    const priorityOrder = taskPrioritySortRank(left.priority) - taskPrioritySortRank(right.priority)
+    if (priorityOrder !== 0) return priorityOrder
+
+    return left.ref.localeCompare(right.ref)
+  })
 }
 
 function sortActiveTasks(tasks: Task[]): Task[] {
@@ -291,7 +310,8 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
         dedupedById.set(issue.id, toTask(issue, issuesById))
       }
 
-      return sortActiveTasks([...dedupedById.values()]).slice(0, MAX_LIST_RESULTS)
+      const deduped = [...dedupedById.values()]
+      return scope === "closed" ? sortClosedTasks(deduped) : sortActiveTasks(deduped).slice(0, MAX_LIST_RESULTS)
     },
 
     async show(ref: string): Promise<Task> {

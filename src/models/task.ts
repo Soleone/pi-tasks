@@ -18,6 +18,7 @@ export interface Task {
   createdAt?: string
   dueAt?: string
   updatedAt?: string
+  closedAt?: string
   parentRef?: string
   childCount?: number
   blockers?: TaskRelation[]

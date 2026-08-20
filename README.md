@@ -30,7 +30,7 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 - `c` to create a root task
 - `Delete` to close the selected task
 
-Grouped mode shows root tasks first and reveals indented descendants on expansion. Press `x` to show archived (closed) tasks instead of active ones; `x` again returns to the active list. Closing or reopening a task removes it from the current view since it no longer belongs to that scope. Searching in grouped mode automatically includes the ancestor path to matching descendants. Blocked rows include unresolved blocker refs, and the preview shows blocker titles and whether each blocker is open, closed, or missing. The blocked marker is derived from blocker readiness without changing the backend lifecycle status.
+Grouped mode shows root tasks first and reveals indented descendants on expansion. Press `x` to show archived (closed) tasks instead of active ones; `x` again returns to the active list. The archive is sorted most recently closed first (beads `closed_at`, or `updated_at` for sq/tq; TODO.md has no timestamps, so it keeps file order). Closing or reopening a task removes it from the current view since it no longer belongs to that scope. Searching in grouped mode automatically includes the ancestor path to matching descendants. Blocked rows include unresolved blocker refs, and the preview shows blocker titles and whether each blocker is open, closed, or missing. The blocked marker is derived from blocker readiness without changing the backend lifecycle status.
 
 ### Edit view
 
