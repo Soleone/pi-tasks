@@ -12,6 +12,7 @@ export type ListIntent =
   | { type: "work" }
   | { type: "edit" }
   | { type: "toggleStatus" }
+  | { type: "closeTask" }
   | { type: "setPriority"; priority: string }
   | { type: "scrollDescription"; delta: number }
   | { type: "toggleType" }
@@ -157,6 +158,12 @@ const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     context: "default",
     match: (data) => data === " ",
     intent: () => ({ type: "toggleStatus" }),
+  },
+  {
+    context: "default",
+    help: "del close",
+    match: (data) => matchesKey(data, Key.delete),
+    intent: () => ({ type: "closeTask" }),
   },
   {
     context: "default",

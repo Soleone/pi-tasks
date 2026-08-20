@@ -27,6 +27,7 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 - `Enter` to work off a task
 - `Tab` to insert task details in prompt and close Tasks UI
 - `c` to create a root task
+- `Delete` to close the selected task
 
 Grouped mode shows root tasks first and reveals indented descendants on demand. Searching in grouped mode automatically includes the ancestor path to matching descendants. Blocked rows include unresolved blocker refs, and the preview shows blocker titles and whether each blocker is open, closed, or missing. The blocked marker is derived from blocker readiness without changing the backend lifecycle status.
 

@@ -471,6 +471,15 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
               })
               return
 
+            case "closeTask":
+              withSelectedTask((task) => {
+                const idx = displayTasks.findIndex(i => i.ref === task.ref)
+                if (idx !== -1) displayTasks.splice(idx, 1)
+                void config.onUpdateTask(task.ref, { status: "closed" })
+                rebuildAndRender()
+              })
+              return
+
             case "setPriority":
               withSelectedTask((task) => {
                 if (task.priority === intent.priority) return
