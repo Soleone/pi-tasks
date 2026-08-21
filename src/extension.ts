@@ -3,26 +3,12 @@ import initializeAdapter from "./backend/resolver.ts"
 import type { Task, TaskStatus } from "./models/task.ts"
 import { wouldCreateDependencyCycle, wouldCreateParentCycle } from "./models/task-hierarchy.ts"
 import { buildTaskWorkPrompt, serializeTask } from "./lib/task-serialization.ts"
+import { parsePriorityKey } from "./lib/priority-keys.ts"
 import { showTaskList } from "./ui/pages/list.ts"
 import { showTaskForm } from "./ui/pages/show.ts"
 import type { TaskAdapterCapabilities, TaskListScope, TaskUpdate } from "./backend/api.ts"
 
 const TASK_LIST_SHORTCUTS = ["ctrl+shift+r", "alt+x"]
-
-function parsePriorityKey(
-  data: string,
-  priorities: string[],
-  priorityHotkeys?: Record<string, string>,
-): string | null {
-  if (data.length !== 1) return null
-
-  const hotkeyPriority = priorityHotkeys?.[data]
-  if (hotkeyPriority && priorities.includes(hotkeyPriority)) return hotkeyPriority
-
-  const rank = parseInt(data, 10)
-  if (isNaN(rank) || rank < 1 || rank > priorities.length) return null
-  return priorities[rank - 1] ?? null
-}
 
 function cycleStatus(current: TaskStatus, statusMap: Record<string, string>): TaskStatus {
   const statusCycle = Object.keys(statusMap) as TaskStatus[]

@@ -1,5 +1,6 @@
 import type { TaskStatus } from "../models/task.ts"
 import type { TaskAdapterCapabilities } from "../backend/api.ts"
+import { buildPriorityHelpText } from "../lib/priority-keys.ts"
 
 export type FormFocus = "nav" | "title" | "desc"
 export type FormMode = "edit" | "create"
@@ -64,17 +65,6 @@ export function buildPrimaryHelpText(focus: FormFocus): string {
   if (focus === "title") return "shift+tab nav • enter save • tab description • esc nav"
   if (focus === "desc") return "shift+enter newline • shift+tab title • enter save • esc nav"
   return "tab title • enter save • a/esc back"
-}
-
-function buildPriorityHelpText(priorities: string[], priorityHotkeys?: Record<string, string>): string {
-  const hotkeyKeys = priorityHotkeys ? Object.keys(priorityHotkeys).sort((a, b) => a.localeCompare(b)) : []
-  if (hotkeyKeys.length > 0) {
-    return `${hotkeyKeys.join("/")} priority`
-  }
-
-  if (priorities.length === 0) return "priority"
-  if (priorities.length === 1) return "1 priority"
-  return `1-${priorities.length} priority`
 }
 
 export function buildSecondaryHelpText(
