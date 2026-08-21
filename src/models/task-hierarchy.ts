@@ -89,6 +89,26 @@ export function projectTaskList(tasks: Task[], options: TaskProjectionOptions): 
   return result
 }
 
+export interface RefLinked {
+  ref: string
+  parentRef?: string
+}
+
+/**
+ * Follows parent links from a task to the root of its ancestry. Missing
+ * parents terminate the walk; a cycle returns the node where the walk would
+ * re-enter an already visited ref.
+ */
+export function resolveRoot<T extends RefLinked>(task: T, byRef: ReadonlyMap<string, T>): T {
+  const seen = new Set<string>([task.ref])
+  let current = task
+  while (current.parentRef && byRef.has(current.parentRef) && !seen.has(current.parentRef)) {
+    seen.add(current.parentRef)
+    current = byRef.get(current.parentRef)!
+  }
+  return current
+}
+
 export function wouldCreateParentCycle(tasks: Task[], taskRef: string, parentRef: string | undefined): boolean {
   if (!parentRef) return false
   if (parentRef === taskRef) return true

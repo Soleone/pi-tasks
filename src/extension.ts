@@ -16,6 +16,7 @@ import {
 } from "./lib/task-editing.ts"
 import { showTaskList } from "./ui/pages/list.ts"
 import { showTaskForm } from "./ui/pages/show.ts"
+import type { FormDraft } from "./controllers/show.ts"
 import type { TaskListScope, TaskUpdate } from "./backend/api.ts"
 
 const TASK_LIST_SHORTCUTS = ["ctrl+shift+r", "alt+x"]
@@ -23,6 +24,16 @@ const TASK_LIST_SHORTCUTS = ["ctrl+shift+r", "alt+x"]
 interface EditTaskResult {
   updatedTask: Task | null
   closeList: boolean
+}
+
+interface NormalizedDraft {
+  title: string
+  description: string
+  status: TaskStatus
+  priority: string | undefined
+  taskType: string | undefined
+  parentRef?: string
+  blockedBy?: string[]
 }
 
 function branchHasCustomMessage(entries: unknown[], customType: string): boolean {
@@ -94,8 +105,22 @@ export default function registerExtension(pi: ExtensionAPI) {
     return { ...fromList }
   }
 
-  async function updateTask(ref: string, update: TaskUpdate): Promise<void> {
-    await backend.update(ref, update)
+  function normalizeDraft(draft: FormDraft): NormalizedDraft {
+    return {
+      title: draft.title.trim(),
+      description: draft.description,
+      status: draft.status,
+      priority: draft.priority,
+      taskType: draft.taskType,
+      ...supportedDraftRelationships(draft, backend.capabilities),
+    }
+  }
+
+  async function persistDraft(previous: Task, draft: NormalizedDraft, allTasks: Task[]): Promise<{ task: Task; changed: boolean }> {
+    const update = buildTaskUpdate(previous, draft, allTasks)
+    const changed = hasTaskUpdate(update)
+    if (changed) await backend.update(previous.ref, update)
+    return { task: applyDraftToTask(previous, draft, allTasks), changed }
   }
 
   async function editTask(
@@ -119,22 +144,9 @@ export default function registerExtension(pi: ExtensionAPI) {
       priorities: backend.priorities,
       priorityHotkeys: backend.priorityHotkeys,
       onSave: async (draft) => {
-        const relationships = supportedDraftRelationships(draft, backend.capabilities)
-        const nextDraft = {
-          title: draft.title,
-          description: draft.description,
-          status: draft.status,
-          priority: draft.priority,
-          taskType: draft.taskType,
-          ...relationships,
-        }
-        const update = buildTaskUpdate(task, nextDraft, allTasks)
-
-        if (!hasTaskUpdate(update)) return false
-
-        await updateTask(ref, update)
-        task = applyDraftToTask(task, nextDraft, allTasks)
-        return true
+        const result = await persistDraft(task, normalizeDraft(draft), allTasks)
+        task = result.task
+        return result.changed
       },
     })
 
@@ -168,34 +180,18 @@ export default function registerExtension(pi: ExtensionAPI) {
       priorities: backend.priorities,
       priorityHotkeys: backend.priorityHotkeys,
       onSave: async (draft) => {
-        const title = draft.title.trim()
-        if (title.length === 0) {
-          throw new Error("Title is required")
-        }
-
-        const relationships = supportedDraftRelationships(draft, backend.capabilities)
-        const nextDraft = {
-          title,
-          description: draft.description,
-          status: draft.status,
-          priority: draft.priority,
-          taskType: draft.taskType,
-          ...relationships,
-        }
+        const normalized = normalizeDraft(draft)
+        if (normalized.title.length === 0) throw new Error("Title is required")
 
         if (!createdTask) {
-          createdTask = await backend.create(nextDraft)
-          createdTask = applyDraftToTask(createdTask, nextDraft, allTasks)
+          createdTask = await backend.create(normalized)
+          createdTask = applyDraftToTask(createdTask, normalized, allTasks)
           return true
         }
 
-        const update = buildTaskUpdate(createdTask, nextDraft, [...allTasks, createdTask])
-
-        if (!hasTaskUpdate(update)) return false
-
-        await updateTask(createdTask.ref, update)
-        createdTask = applyDraftToTask(createdTask, nextDraft, allTasks)
-        return true
+        const result = await persistDraft(createdTask, normalized, [...allTasks, createdTask])
+        createdTask = result.task
+        return result.changed
       },
     })
 
@@ -222,7 +218,7 @@ export default function registerExtension(pi: ExtensionAPI) {
         allowHierarchy: backend.capabilities.hierarchy !== "none",
         cycleStatus: nextStatus,
         cycleTaskType: nextTaskType,
-        onUpdateTask: updateTask,
+        onUpdateTask: (ref, update) => backend.update(ref, update),
         onWork: (task) => pi.sendUserMessage(buildTaskWorkPrompt(task)),
         onInsert: (task) => ctx.ui.pasteToEditor(`${serializeTask(task)} `),
         onReload: async (scope) => {

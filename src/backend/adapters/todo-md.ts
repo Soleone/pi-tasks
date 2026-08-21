@@ -4,7 +4,7 @@ import { existsSync } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import type { Task, TaskStatus } from "../../models/task.ts"
-import { wouldCreateParentCycle } from "../../models/task-hierarchy.ts"
+import { resolveRoot, wouldCreateParentCycle } from "../../models/task-hierarchy.ts"
 import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskListScope, TaskStatusMap, TaskUpdate } from "../api.ts"
 
 const DEFAULT_TODO_FILES = ["TODO.md", "todo.md"] as const
@@ -12,6 +12,13 @@ const TODO_FILE_ENV = "PI_TASKS_TODO_PATH"
 const SECTION_ORDER = ["now", "next", "later", "archive"] as const
 const OPEN_PRIORITIES = ["now", "next", "later"] as const
 const DEFAULT_TODO_TITLE = "TODO"
+
+const SECTION_TITLES: Record<TodoSection, string> = {
+  now: "Now",
+  next: "Next",
+  later: "Later",
+  archive: "Archive",
+}
 
 const STATUS_MAP = {
   open: "open",
@@ -259,6 +266,16 @@ function renderTaskForest(tasks: TodoTaskRecord[]): string[] {
   return lines
 }
 
+function renderSections(title: string, sections: ReadonlyArray<readonly [string | null, TodoTaskRecord[]]>): string {
+  const lines: string[] = [`# ${title}`, ""]
+  for (const [heading, tasks] of sections) {
+    if (heading !== null) lines.push(`## ${heading}`, "")
+    lines.push(...renderTaskForest(tasks))
+    lines.push("")
+  }
+  return `${lines.join("\n").trimEnd()}\n`
+}
+
 function renderStructuredDocument(document: TodoDocument): string {
   const sectionTasks: Record<TodoSection, TodoTaskRecord[]> = {
     now: [],
@@ -268,18 +285,8 @@ function renderStructuredDocument(document: TodoDocument): string {
   }
 
   const byRef = new Map(document.tasks.map(task => [task.ref, task]))
-  const rootFor = (task: TodoTaskRecord): TodoTaskRecord => {
-    const seen = new Set<string>()
-    let current = task
-    while (current.parentRef && byRef.has(current.parentRef) && !seen.has(current.parentRef)) {
-      seen.add(current.ref)
-      current = byRef.get(current.parentRef)!
-    }
-    return current
-  }
-
   for (const task of document.tasks) {
-    const root = rootFor(task)
+    const root = resolveRoot(task, byRef)
     if (root.status === "closed") {
       sectionTasks.archive.push(task)
       continue
@@ -287,51 +294,21 @@ function renderStructuredDocument(document: TodoDocument): string {
     sectionTasks[root.priority ?? "now"].push(task)
   }
 
-  const lines: string[] = [`# ${document.title}`, ""]
-
-  const sectionTitleById: Record<TodoSection, string> = {
-    now: "Now",
-    next: "Next",
-    later: "Later",
-    archive: "Archive",
-  }
-
-  for (const section of SECTION_ORDER) {
-    lines.push(`## ${sectionTitleById[section]}`)
-    lines.push("")
-
-    lines.push(...renderTaskForest(sectionTasks[section]))
-
-    lines.push("")
-  }
-
-  return `${lines.join("\n").trimEnd()}\n`
+  return renderSections(
+    document.title,
+    SECTION_ORDER.map(section => [SECTION_TITLES[section], sectionTasks[section]] as const),
+  )
 }
 
 function renderFlatDocument(document: TodoDocument): string {
-  const lines: string[] = [`# ${document.title}`, ""]
+  const byRef = new Map(document.tasks.map(task => [task.ref, task]))
+  const openTasks = document.tasks.filter(task => resolveRoot(task, byRef).status !== "closed")
+  const archivedTasks = document.tasks.filter(task => resolveRoot(task, byRef).status === "closed")
 
-  const rootByRef = new Map(document.tasks.map(task => [task.ref, task]))
-  const rootFor = (task: TodoTaskRecord): TodoTaskRecord => {
-    const seen = new Set<string>()
-    let current = task
-    while (current.parentRef && rootByRef.has(current.parentRef) && !seen.has(current.parentRef)) {
-      seen.add(current.ref)
-      current = rootByRef.get(current.parentRef)!
-    }
-    return current
-  }
-  const openTasks = document.tasks.filter(task => rootFor(task).status !== "closed")
-  lines.push(...renderTaskForest(openTasks))
+  const sections: Array<readonly [string | null, TodoTaskRecord[]]> = [[null, openTasks]]
+  if (archivedTasks.length > 0) sections.push([SECTION_TITLES.archive, archivedTasks])
 
-  const archivedTasks = document.tasks.filter(task => rootFor(task).status === "closed")
-  if (archivedTasks.length > 0) {
-    lines.push("", "## Archive", "")
-    lines.push(...renderTaskForest(archivedTasks))
-  }
-
-  lines.push("")
-  return `${lines.join("\n").trimEnd()}\n`
+  return renderSections(document.title, sections)
 }
 
 export function renderTodoDocument(document: TodoDocument): string {
@@ -452,33 +429,25 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
       }
 
       const document = await getDocument()
-      const index = document.tasks.findIndex(task => task.ref === ref)
+      const updatedTasks = [...document.tasks]
+      const byRef = new Map(updatedTasks.map(task => [task.ref, task]))
+      const index = updatedTasks.findIndex(task => task.ref === ref)
       if (index === -1) throw new Error(`Task not found: ${ref}`)
 
-      const updatedTasks = [...document.tasks]
       const currentTask = updatedTasks[index]!
       if (update.parentRef !== undefined && update.parentRef !== null) {
-        if (!updatedTasks.some(task => task.ref === update.parentRef)) {
+        if (!byRef.has(update.parentRef)) {
           throw new Error(`Parent task not found: ${update.parentRef}`)
         }
-        const domainTasks = updatedTasks.map(toTask)
-        if (wouldCreateParentCycle(domainTasks, ref, update.parentRef)) {
+        if (wouldCreateParentCycle(updatedTasks.map(toTask), ref, update.parentRef)) {
           throw new Error("A task cannot be its own parent or a descendant of itself")
         }
       }
       let taskUpdate = update
 
       if (update.priority !== undefined && currentTask.parentRef) {
-        const byRef = new Map(updatedTasks.map((task, taskIndex) => [task.ref, taskIndex]))
-        const seen = new Set<string>()
-        let rootIndex = index
-        while (true) {
-          const parentRef = updatedTasks[rootIndex]!.parentRef
-          if (!parentRef || seen.has(parentRef) || !byRef.has(parentRef)) break
-          seen.add(parentRef)
-          rootIndex = byRef.get(parentRef)!
-        }
-        updatedTasks[rootIndex] = applyTaskUpdate(updatedTasks[rootIndex]!, { priority: update.priority })
+        const root = resolveRoot(currentTask, byRef)
+        updatedTasks[updatedTasks.indexOf(root)] = applyTaskUpdate(root, { priority: update.priority })
         const { priority: _inheritedPriority, ...remainingUpdate } = update
         taskUpdate = remainingUpdate
       }

@@ -17,6 +17,12 @@ const TASK_LIST_ROW_LAYOUT = {
   valueColumnWidth: 70,
 }
 
+interface ListItem {
+  value: string
+  label: string
+  description: string
+}
+
 export interface ListPageConfig {
   title: string
   subtitle?: string
@@ -85,9 +91,6 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       ...task,
       title: `${"  ".repeat(depth)}${hasChildren ? (expanded ? "▾ " : "▸ ") : (depth > 0 ? "  " : "")}${task.title}`,
     })
-    const getMaxLabelWidth = () => Math.max(0, ...projectedTasks().map(row =>
-      stripAnsi(buildListRowModel(taskWithHierarchyLabel(row.task, row.depth, row.hasChildren, row.expanded)).label).length
-    ))
 
     let selectedRef: string | undefined
     let createParentRef: string | undefined
@@ -126,9 +129,11 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         return `${theme.fg("muted", meta)}${META_SUMMARY_SEPARATOR}${summary}`
       }
 
-      const getItems = () => {
+      const getItems = (): ListItem[] => {
         const projected = projectedTasks()
-        const maxLabelWidth = getMaxLabelWidth()
+        const maxLabelWidth = Math.max(0, ...projected.map(row =>
+          stripAnsi(buildListRowModel(taskWithHierarchyLabel(row.task, row.depth, row.hasChildren, row.expanded)).label).length
+        ))
         return projected.map(({ task, depth, hasChildren, expanded }) => {
           const row = buildListRowModel(taskWithHierarchyLabel(task, depth, hasChildren, expanded), { maxLabelWidth })
           return {
@@ -147,36 +152,48 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         noMatch: (t: string) => theme.fg("warning", t),
       }
 
-      let items = getItems()
-      let selectList = new SelectListWithColumns(items, Math.min(items.length, 10), selectListTheme, TASK_LIST_ROW_LAYOUT)
-
-      if (rememberedSelectedRef) {
-        const rememberedIndex = items.findIndex(i => i.value === rememberedSelectedRef)
-        if (rememberedIndex >= 0) selectList.setSelectedIndex(rememberedIndex)
-      }
-
-      selectList.onSelectionChange = () => {
-        const selected = selectList.getSelectedItem()
-        if (selected) rememberedSelectedRef = selected.value
-        updateDescPreview()
+      const rerender = () => {
+        container.invalidate()
         tui.requestRender()
       }
-      selectList.onSelect = () => {
-        const sel = selectList.getSelectedItem()
-        if (sel) {
-          selectedRef = sel.value
-          rememberedSelectedRef = sel.value
+
+      let items = getItems()
+
+      const createSelectList = (nextItems: ListItem[]) => {
+        const list = new SelectListWithColumns(nextItems, Math.min(nextItems.length, 10), selectListTheme, TASK_LIST_ROW_LAYOUT)
+        list.onSelectionChange = () => {
+          const selected = list.getSelectedItem()
+          if (selected) rememberedSelectedRef = selected.value
+          updateDescPreview()
+          tui.requestRender()
         }
-        done("select")
-      }
-      selectList.onCancel = () => {
-        if (filterTerm) {
-          filterTerm = ""
-          rebuildAndRender()
-        } else {
-          done("cancel")
+        list.onSelect = () => {
+          const sel = list.getSelectedItem()
+          if (sel) {
+            selectedRef = sel.value
+            rememberedSelectedRef = sel.value
+          }
+          done("select")
         }
+        list.onCancel = () => {
+          if (filterTerm) {
+            filterTerm = ""
+            rebuildAndRender()
+          } else {
+            done("cancel")
+          }
+        }
+        return list
       }
+
+      const restoreSelection = (preferredRef: string | undefined) => {
+        if (!preferredRef) return
+        const index = items.findIndex(i => i.value === preferredRef)
+        if (index >= 0) selectList.setSelectedIndex(index)
+      }
+
+      let selectList = createSelectList(items)
+      restoreSelection(rememberedSelectedRef)
 
       const renderListArea = () => {
         while (listAreaContainer.children.length > 0) {
@@ -268,8 +285,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
         const nextIndex = (normalizedIndex + delta + items.length) % items.length
         selectList.setSelectedIndex(nextIndex)
         updateDescPreview()
-        container.invalidate()
-        tui.requestRender()
+        rerender()
       }
 
       const getSelectedTask = (): Task | undefined => {
@@ -286,45 +302,17 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
       }
 
       const rebuildAndRender = () => {
-        items = getItems()
         const prevSelected = selectList.getSelectedItem()
 
-        selectList = new SelectListWithColumns(items, Math.min(items.length, 10), selectListTheme, TASK_LIST_ROW_LAYOUT)
-
-        selectList.onSelectionChange = () => {
-          const selected = selectList.getSelectedItem()
-          if (selected) rememberedSelectedRef = selected.value
-          updateDescPreview()
-          tui.requestRender()
-        }
-        selectList.onSelect = () => {
-          const sel = selectList.getSelectedItem()
-          if (sel) {
-            selectedRef = sel.value
-            rememberedSelectedRef = sel.value
-          }
-          done("select")
-        }
-        selectList.onCancel = () => {
-          if (filterTerm) {
-            filterTerm = ""
-            rebuildAndRender()
-          } else {
-            done("cancel")
-          }
-        }
+        items = getItems()
+        selectList = createSelectList(items)
 
         renderListArea()
-
-        if (prevSelected) {
-          const newIdx = items.findIndex(i => i.value === prevSelected.value)
-          if (newIdx >= 0) selectList.setSelectedIndex(newIdx)
-        }
+        restoreSelection(prevSelected?.value ?? rememberedSelectedRef)
 
         refreshDisplay()
         updateDescPreview()
-        container.invalidate()
-        tui.requestRender()
+        rerender()
       }
 
       const reloadTasks = (nextScope: TaskListScope) => {
@@ -373,16 +361,14 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
               searching = true
               searchBuffer = ""
               refreshDisplay()
-              container.invalidate()
-              tui.requestRender()
+              rerender()
               return
 
             case "searchCancel":
               searching = false
               searchBuffer = ""
               refreshDisplay()
-              container.invalidate()
-              tui.requestRender()
+              rerender()
               return
 
             case "searchApply":
@@ -395,15 +381,13 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
             case "searchBackspace":
               searchBuffer = searchBuffer.slice(0, -1)
               refreshDisplay()
-              container.invalidate()
-              tui.requestRender()
+              rerender()
               return
 
             case "searchAppend":
               searchBuffer += intent.value
               refreshDisplay()
-              container.invalidate()
-              tui.requestRender()
+              rerender()
               return
 
             case "moveSelection":
@@ -472,8 +456,7 @@ export async function showTaskList(ctx: ExtensionCommandContext, config: ListPag
                 const visible = allWrapped.slice(descScroll, descScroll + 7)
                 while (visible.length < 7) visible.push("")
                 descTextComponent.setText(visible.join("\n"))
-                container.invalidate()
-                tui.requestRender()
+                rerender()
               })
               return
 
