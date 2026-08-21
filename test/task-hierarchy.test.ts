@@ -2,7 +2,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { projectTaskList, wouldCreateDependencyCycle, wouldCreateParentCycle } from "../src/models/task-hierarchy.ts"
 import { buildTaskWorkPrompt, serializeTask } from "../src/lib/task-serialization.ts"
-import { buildTaskListTextParts, displayTaskStatus, type Task } from "../src/models/task.ts"
+import { displayTaskStatus, type Task } from "../src/models/task.ts"
+import { buildTaskListTextParts } from "../src/ui/task-format.ts"
 
 const tasks: Task[] = [
   { ref: "root", title: "Epic", status: "open", taskType: "epic" },

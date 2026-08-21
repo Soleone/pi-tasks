@@ -1,5 +1,5 @@
 import { DynamicBorder, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
-import { Container, Key, Spacer, Text, matchesKey, truncateToWidth, type Component } from "@mariozechner/pi-tui"
+import { Container, Key, Spacer, Text, matchesKey, truncateToWidth } from "@mariozechner/pi-tui"
 import { ReservedLineText } from "../components/reserved-line-text.ts"
 import {
   buildPrimaryHelpText,
@@ -12,11 +12,13 @@ import {
   type FormMode,
   type HeaderStatus,
 } from "../../controllers/show.ts"
-import { buildTaskIdentityText, buildTaskListTextParts, formatTaskTypeCode, type Task, type TaskStatus } from "../../models/task.ts"
+import { buildTaskIdentityText, buildTaskListTextParts, formatTaskTypeCode } from "../task-format.ts"
+import type { Task, TaskStatus } from "../../models/task.ts"
 import type { TaskAdapterCapabilities } from "../../backend/api.ts"
 import { BlurEditorField } from "../components/blur-editor.ts"
 import { KEYBOARD_HELP_PADDING_X, formatKeyboardHelp } from "../components/keyboard-help.ts"
 import { MinHeightContainer } from "../components/min-height.ts"
+import { FixedHeightField } from "../components/fixed-height-field.ts"
 
 export type TaskFormAction = "back" | "close_list"
 
@@ -85,55 +87,6 @@ function isExplicitNewLineCommand(data: string): boolean {
     data === "\x1b\r" ||
     SHIFT_ENTER_FALLBACK_SEQUENCE.test(data)
   )
-}
-
-class FixedHeightField implements Component {
-  constructor(private child: Component, private height: number) {}
-
-  invalidate(): void {
-    this.child.invalidate()
-  }
-
-  render(width: number): string[] {
-    const lines = this.child.render(width)
-
-    if (lines.length === this.height) return lines
-
-    if (lines.length < this.height) {
-      return [...lines, ...Array(this.height - lines.length).fill(" ".repeat(Math.max(0, width)))]
-    }
-
-    if (this.height <= 1) {
-      return [lines[lines.length - 1] || ""]
-    }
-
-    const bottomLine = lines[lines.length - 1] || ""
-    const bodyLines = lines.slice(0, lines.length - 1)
-    const viewportHeight = this.height - 1
-
-    const cursorIndex = bodyLines.findIndex(line => line.includes("\x1b[7m"))
-
-    let start = Math.max(0, bodyLines.length - viewportHeight)
-    if (cursorIndex >= 0) {
-      if (cursorIndex < start) {
-        start = cursorIndex
-      } else if (cursorIndex >= start + viewportHeight) {
-        start = cursorIndex - viewportHeight + 1
-      }
-    }
-
-    const clippedBody = bodyLines.slice(start, start + viewportHeight)
-    if (clippedBody.length < viewportHeight) {
-      clippedBody.push(...Array(viewportHeight - clippedBody.length).fill(" ".repeat(Math.max(0, width))))
-    }
-
-    return [...clippedBody, bottomLine]
-  }
-
-  handleInput(data: string): void {
-    const childWithInput = this.child as Component & { handleInput?: (input: string) => void }
-    childWithInput.handleInput?.(data)
-  }
 }
 
 export async function showTaskForm(ctx: ExtensionCommandContext, options: ShowTaskFormOptions): Promise<TaskFormResult> {

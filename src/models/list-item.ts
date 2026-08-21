@@ -1,4 +1,5 @@
-import { buildTaskListTextParts, type Task } from "./task.ts"
+import { buildTaskListTextParts } from "../ui/task-format.ts"
+import type { Task } from "./task.ts"
 
 export interface TaskListRowOptions {
   maxLabelWidth?: number
