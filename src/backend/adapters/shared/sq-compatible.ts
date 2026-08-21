@@ -1,5 +1,8 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent"
 import type { Task, TaskStatus } from "../../../models/task.ts"
+import { createCliRunner, parseJsonArray, parseJsonObject } from "./cli.ts"
+import { PRIORITIES, PRIORITY_HOTKEYS, TASK_TYPES } from "./constants.ts"
+import { sortActiveTasks, sortClosedTasks } from "./sorting.ts"
 import type {
   CreateTaskInput,
   TaskAdapter,
@@ -17,16 +20,6 @@ const STATUS_MAP = {
   inProgress: "in_progress",
   closed: "closed",
 } satisfies TaskStatusMap
-
-const TASK_TYPES = ["task", "feature", "bug", "chore", "epic"]
-const PRIORITIES = ["p0", "p1", "p2", "p3", "p4"]
-const PRIORITY_HOTKEYS: Record<string, string> = {
-  "0": "p0",
-  "1": "p1",
-  "2": "p2",
-  "3": "p3",
-  "4": "p4",
-}
 
 interface SqCompatibleAdapterOptions {
   id: string
@@ -171,82 +164,8 @@ function toTask(item: SqCompatibleItem, itemsById: ReadonlyMap<string, SqCompati
   }
 }
 
-function taskStatusSortRank(status: TaskStatus): number {
-  if (status === "inProgress") return 0
-  if (status === "open") return 1
-  if (status === "blocked") return 2
-  return 3
-}
-
-function taskPrioritySortRank(priority: string | undefined): number {
-  if (!priority) return PRIORITIES.length + 1
-  const index = PRIORITIES.indexOf(priority)
-  return index >= 0 ? index : PRIORITIES.length
-}
-
-function closedTaskRecency(task: Task): number {
-  const time = Date.parse(task.closedAt ?? task.updatedAt ?? "")
-  return Number.isNaN(time) ? -Infinity : time
-}
-
-function sortClosedTasks(tasks: Task[]): Task[] {
-  return [...tasks].sort((left, right) => {
-    const recencyOrder = closedTaskRecency(right) - closedTaskRecency(left)
-    if (recencyOrder !== 0) return recencyOrder
-
-    const priorityOrder = taskPrioritySortRank(left.priority) - taskPrioritySortRank(right.priority)
-    if (priorityOrder !== 0) return priorityOrder
-
-    return left.ref.localeCompare(right.ref)
-  })
-}
-
-function sortActiveTasks(tasks: Task[]): Task[] {
-  return [...tasks].sort((left, right) => {
-    const statusOrder = taskStatusSortRank(left.status) - taskStatusSortRank(right.status)
-    if (statusOrder !== 0) return statusOrder
-
-    const priorityOrder = taskPrioritySortRank(left.priority) - taskPrioritySortRank(right.priority)
-    if (priorityOrder !== 0) return priorityOrder
-
-    return left.ref.localeCompare(right.ref)
-  })
-}
-
-function parseJsonArray<T>(stdout: string, context: string, command: string): T[] {
-  try {
-    const parsed = JSON.parse(stdout)
-    if (!Array.isArray(parsed)) throw new Error("expected JSON array")
-    return parsed as T[]
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to parse ${command} output (${context}): ${message}`)
-  }
-}
-
-function parseJsonObject<T>(stdout: string, context: string, command: string): T {
-  try {
-    const parsed = JSON.parse(stdout)
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("expected JSON object")
-    }
-    return parsed as T
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to parse ${command} output (${context}): ${message}`)
-  }
-}
-
 function initialize(pi: ExtensionAPI, options: SqCompatibleAdapterOptions): TaskAdapter {
-  async function execCommand(args: string[], timeout = 30_000): Promise<string> {
-    const result = await pi.exec(options.command, args, { timeout })
-    if (result.code !== 0) {
-      const details = (result.stderr || result.stdout || "").trim()
-      throw new Error(details.length > 0 ? details : `${options.command} ${args.join(" ")} failed (code ${result.code})`)
-    }
-
-    return result.stdout
-  }
+  const execCommand = createCliRunner(pi, options.command)
 
   async function showRaw(ref: string): Promise<SqCompatibleItem> {
     const out = await execCommand(["show", ref, "--json"])

@@ -3,6 +3,9 @@ import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import type { Task, TaskStatus } from "../../models/task.ts"
+import { createCliRunner, parseJsonArray, parseJsonObject } from "./shared/cli.ts"
+import { PRIORITIES, PRIORITY_HOTKEYS, TASK_TYPES } from "./shared/constants.ts"
+import { sortActiveTasks, sortClosedTasks } from "./shared/sorting.ts"
 import type {
   CreateTaskInput,
   TaskAdapter,
@@ -19,16 +22,6 @@ const STATUS_MAP = {
   inProgress: "in_progress",
   closed: "closed",
 } satisfies TaskStatusMap
-const TASK_TYPES = ["task", "feature", "bug", "chore", "epic"]
-const PRIORITIES = ["p0", "p1", "p2", "p3", "p4"]
-const PRIORITY_HOTKEYS: Record<string, string> = {
-  "0": "p0",
-  "1": "p1",
-  "2": "p2",
-  "3": "p3",
-  "4": "p4",
-}
-
 const SESSION_CONTEXT_MESSAGE: TaskSessionContextMessage = {
   customType: "pi-tasks-backend-context-beads-v1",
   content: [
@@ -158,47 +151,6 @@ function toTask(beadsIssue: BeadsIssue, issuesById: ReadonlyMap<string, BeadsIss
   return task
 }
 
-function taskStatusSortRank(status: Task["status"]): number {
-  if (status === "inProgress") return 0
-  if (status === "open") return 1
-  return 2
-}
-
-function taskPrioritySortRank(priority: string | undefined): number {
-  if (!priority) return PRIORITIES.length + 1
-  const index = PRIORITIES.indexOf(priority)
-  return index >= 0 ? index : PRIORITIES.length
-}
-
-function closedTaskRecency(task: Task): number {
-  const time = Date.parse(task.closedAt ?? task.updatedAt ?? "")
-  return Number.isNaN(time) ? -Infinity : time
-}
-
-function sortClosedTasks(tasks: Task[]): Task[] {
-  return [...tasks].sort((left, right) => {
-    const recencyOrder = closedTaskRecency(right) - closedTaskRecency(left)
-    if (recencyOrder !== 0) return recencyOrder
-
-    const priorityOrder = taskPrioritySortRank(left.priority) - taskPrioritySortRank(right.priority)
-    if (priorityOrder !== 0) return priorityOrder
-
-    return left.ref.localeCompare(right.ref)
-  })
-}
-
-function sortActiveTasks(tasks: Task[]): Task[] {
-  return [...tasks].sort((left, right) => {
-    const statusOrder = taskStatusSortRank(left.status) - taskStatusSortRank(right.status)
-    if (statusOrder !== 0) return statusOrder
-
-    const priorityOrder = taskPrioritySortRank(left.priority) - taskPrioritySortRank(right.priority)
-    if (priorityOrder !== 0) return priorityOrder
-
-    return left.ref.localeCompare(right.ref)
-  })
-}
-
 function fromTaskUpdateToBeadsArgs(update: TaskUpdate): string[] {
   const args: string[] = []
 
@@ -229,30 +181,6 @@ function fromTaskUpdateToBeadsArgs(update: TaskUpdate): string[] {
   return args
 }
 
-function parseJsonArray<T>(stdout: string, context: string): T[] {
-  try {
-    const parsed = JSON.parse(stdout)
-    if (!Array.isArray(parsed)) throw new Error("expected JSON array")
-    return parsed as T[]
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(`Failed to parse bd output (${context}): ${msg}`)
-  }
-}
-
-function parseJsonObject<T>(stdout: string, context: string): T {
-  try {
-    const parsed = JSON.parse(stdout)
-    if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
-      throw new Error("expected JSON object")
-    }
-    return parsed as T
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(`Failed to parse bd output (${context}): ${msg}`)
-  }
-}
-
 function isApplicable(): boolean {
   if (!existsSync(resolve(process.cwd(), ".beads"))) return false
 
@@ -264,14 +192,7 @@ function isApplicable(): boolean {
 }
 
 function initialize(pi: ExtensionAPI): TaskAdapter {
-  async function execBd(args: string[], timeout = 30_000): Promise<string> {
-    const result = await pi.exec("bd", args, { timeout })
-    if (result.code !== 0) {
-      const details = (result.stderr || result.stdout || "").trim()
-      throw new Error(details.length > 0 ? details : `bd ${args.join(" ")} failed (code ${result.code})`)
-    }
-    return result.stdout
-  }
+  const execBd = createCliRunner(pi, "bd")
 
   async function update(ref: string, update: TaskUpdate): Promise<void> {
     if (update.parentRef !== undefined || update.blockedBy !== undefined) {
@@ -298,10 +219,10 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
       const results = await Promise.all(scopeArgs.map(args => execBd(args)))
 
       const issues = scope === "closed"
-        ? parseJsonArray<BeadsIssue>(results[0]!, "list closed")
+        ? parseJsonArray<BeadsIssue>(results[0]!, "list closed", "bd")
         : [
-            ...parseJsonArray<BeadsIssue>(results[1]!, "list in_progress"),
-            ...parseJsonArray<BeadsIssue>(results[0]!, "list open"),
+            ...parseJsonArray<BeadsIssue>(results[1]!, "list in_progress", "bd"),
+            ...parseJsonArray<BeadsIssue>(results[0]!, "list open", "bd"),
           ]
 
       const issuesById = new Map(issues.map(issue => [issue.id, issue]))
@@ -316,7 +237,7 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
 
     async show(ref: string): Promise<Task> {
       const out = await execBd(["show", ref, "--json"])
-      const beadsIssues = parseJsonArray<BeadsIssue>(out, `show ${ref}`)
+      const beadsIssues = parseJsonArray<BeadsIssue>(out, `show ${ref}`, "bd")
       const task = beadsIssues[0]
       if (!task) throw new Error(`Task not found: ${ref}`)
       return toTask(task)
@@ -349,7 +270,7 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
       }
 
       const out = await execBd(createArgs)
-      const created = toTask(parseJsonObject<BeadsIssue>(out, "create"))
+      const created = toTask(parseJsonObject<BeadsIssue>(out, "create", "bd"))
 
       if (status !== "open") {
         await update(created.ref, { status })
