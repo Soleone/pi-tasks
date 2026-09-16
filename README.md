@@ -66,7 +66,24 @@ So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only th
 
 Because Tasks derives `@category` from task text, the adapter keeps the scope token in the title: created tasks get it appended, renamed tasks keep it, and text that uses a different category is rejected instead of quietly moving the task out of the project.
 
-Tasks talks JSON lines over the sidecar's stdio (`--stdio --database <path>`) through one shared child process that is respawned on demand. The backend is located from `PI_TASKS_TASKS_COMMAND`, then the sidecar or `dist/backend/cli.js` of the checkouts in `TASKS_REPO` and `$SRC/products/tasks`, then `tasks-backend` and `tasks` on `PATH`. Task ids are UUIDs, so the list shows an eight character prefix that the adapter resolves back to the full id; longer prefixes disambiguate.
+Tasks talks JSON lines over the sidecar's stdio (`--stdio --database <path>`) through one shared child process that is respawned on demand. Task ids are UUIDs, so the list shows an eight character prefix that the adapter resolves back to the full id; longer prefixes disambiguate.
+
+The backend is located from `PI_TASKS_TASKS_COMMAND`, then the sidecar or `dist/backend/cli.js` of the checkouts in `TASKS_REPO` and `$SRC/products/tasks`, then `tasks-backend` and `tasks` on `PATH`. Where a Tasks install puts that sidecar:
+
+| Install | Sidecar | Needs setup |
+| --- | --- | --- |
+| Development checkout | `src-tauri/binaries/tasks-backend-<target triple>` | no |
+| `.deb` / `.rpm` | `/usr/bin/tasks-backend`, beside `/usr/bin/tasks` | no |
+| AppImage | `usr/bin/tasks-backend` inside the image, under a mount point that changes each run | yes |
+
+For an AppImage, point at the extracted files rather than the mounted image. `--appimage-extract` produces them, and a development build leaves the same tree in `src-tauri/target/release/bundle/appimage/Tasks.AppDir`:
+
+```bash
+./Tasks_0.1.0_amd64.AppImage --appimage-extract
+export PI_TASKS_TASKS_COMMAND="$PWD/squashfs-root/usr/bin/tasks-backend"
+```
+
+Symlinking that sidecar into `~/.local/bin` works too, since that directory is usually on `PATH`.
 
 Tasks has no task types or due dates, so the type stays `task` and `dueAt` is never sent. Status and priority map directly:
 
