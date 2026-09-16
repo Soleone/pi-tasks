@@ -62,7 +62,7 @@ Use these text colors consistently, from strongest to weakest emphasis:
 
 ## Task adapter quick guide
 
-To add a backend adapter, create one file in `src/backend/adapters/` with a **default export** that satisfies `TaskAdapterInitializer`.
+To add a backend adapter, create one file in `src/backend/adapters/` with a **default export** that satisfies `TaskAdapterInitializer`. Adapters that need a client or discovery code may live in a subdirectory instead, as long as `index.ts` holds the default export (see `adapters/tasks/`).
 
 Required shape:
 
@@ -78,8 +78,10 @@ Required shape:
 Resolution behavior:
 
 1. `PI_TASKS_BACKEND` selects adapter by `id`
-2. otherwise the first adapter with `isApplicable() === true` is used
+2. otherwise the first adapter with `isApplicable() === true` is used, in the order listed in `resolver.ts`
 3. if none apply, first loaded adapter is used as fallback
+
+`isApplicable()` and `initialize()` run synchronously while the extension loads, so detection cannot await. The `tasks` adapter therefore reads the canonical JSON workspace directly to find its category and defers launching the backend until the first request.
 
 Keep backend-specific field mapping inside adapter files only (e.g. beads `issue_type`, `in_progress`, `created_at`, `due_at`), and keep app-level types in task-oriented camelCase (`taskType`, `inProgress`, `createdAt`, `dueAt`).
 

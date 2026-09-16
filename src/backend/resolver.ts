@@ -2,12 +2,15 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent"
 import type { TaskAdapter, TaskAdapterInitializer } from "./api.ts"
 import beadsAdapter from "./adapters/beads.ts"
 import sqAdapter from "./adapters/sq.ts"
+import tasksAdapter from "./adapters/tasks/index.ts"
 import todoMdAdapter from "./adapters/todo-md.ts"
 import tqAdapter from "./adapters/tq.ts"
 
-// Detection order matters: this mirrors the old alphabetical file order that
-// lookup() scanned. `tq` is additionally special-cased first in lookup().
+// Detection order matters: the first applicable adapter wins. `tasks` leads
+// because a category that matches the project directory is an explicit choice,
+// then the file-based `tq` marker, then beads and sq.
 const ADAPTER_INITIALIZERS: TaskAdapterInitializer[] = [
+  tasksAdapter,
   tqAdapter,
   beadsAdapter,
   sqAdapter,
@@ -27,9 +30,6 @@ function lookup(): TaskAdapterInitializer {
     }
     return configured
   }
-
-  const tqAdapterInitializer = findAdapter("tq")
-  if (tqAdapterInitializer?.isApplicable()) return tqAdapterInitializer
 
   const detected = ADAPTER_INITIALIZERS.find(adapter => adapter.isApplicable())
   if (detected) return detected

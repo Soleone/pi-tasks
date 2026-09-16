@@ -49,10 +49,36 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
 
 ### Supported backends:
 
+- [Tasks](https://github.com/Soleone/tasks) - Reads and writes a Tasks workspace through its JSON-lines command path, scoped to the `@category` that matches the project directory. Detection runs first, so a matching category claims the project.
 - [sq](https://github.com/DerekStride/sq) - Uses the `sq` cli to manage tasks in a `.sift` directory via a `issues.jsonl` file. No initialization necessary.
 - `tq` - Uses the `tq` cli to manage tasks in a `.tq/tasks.jsonl` file. Automatically preferred when a `.tq` directory is detected.
 - [beads](https://github.com/steveyegge/beads) - Uses the `bd` cli to manage tasks into a `.beads` directory containing multiple files.
 - `todo-md` - Creates or reads a `TODO.md` file with different sections to emulate priority.
+
+### Tasks workspace backend
+
+The `tasks` backend talks to the same command path as the Tasks desktop app, so the list, the app, and any other agent stay in sync without a shared file format to negotiate. Detection needs two things:
+
+1. The Tasks workspace exists (`com.soleone.tasks/tasks.db` in the platform data directory, or wherever `TASKS_DATABASE_PATH` points).
+2. The current directory name matches a `@category` that at least one non-canceled task uses.
+
+So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only those tasks are listed. The directory name is lowercased and anything outside letters, numbers, hyphens and underscores becomes a hyphen, so `My.App` reads as `@my-app`. If no category matches, the backend stays out of the way and the next adapter is detected instead.
+
+Because Tasks derives `@category` from task text, the adapter keeps the scope token in the title: created tasks get it appended, renamed tasks keep it, and text that uses a different category is rejected instead of quietly moving the task out of the project.
+
+Tasks talks JSON lines over the sidecar's stdio (`--stdio --database <path>`) through one shared child process that is respawned on demand. The backend is located from `PI_TASKS_TASKS_COMMAND`, then the sidecar or `dist/backend/cli.js` of the checkouts in `TASKS_REPO` and `$SRC/products/tasks`, then `tasks-backend` and `tasks` on `PATH`. Task ids are UUIDs, so the list shows an eight character prefix that the adapter resolves back to the full id; longer prefixes disambiguate.
+
+Tasks has no task types or due dates, so the type stays `task` and `dueAt` is never sent. Status and priority map directly:
+
+| pi-tasks | Tasks |
+| --- | --- |
+| `open` | `open` |
+| `inProgress` | `in_progress` (`task.start`) |
+| `deferred` | `paused` (`task.pause`) |
+| `closed` | `done` (`task.complete`); `canceled` tasks also read as closed |
+| `p0` - `p4` | priority `0` - `4` |
+
+Mutations carry the task's current `expectedVersion`, so a concurrent edit from the app surfaces as a stale-version error rather than a silent overwrite. Canceled dependencies stay in place as history; only the blockers the list shows are added or removed.
 
 ### Relationships
 
@@ -60,6 +86,7 @@ Parent/child hierarchy and blocked-by dependencies are independent: a child is n
 
 | Backend | Hierarchy | Blocked by |
 | --- | --- | --- |
+| `tasks` | Native `parentId` (`task.move`) | Native `task.dependency.add` / `task.dependency.remove` |
 | `sq` / `tq` | `metadata.pi_tasks.parentRef` | Native `blocked_by` |
 | `todo-md` | Nested checklist indentation | Not supported |
 | `beads` | Not supported | Read-only when native blocker records are present |
@@ -84,7 +111,17 @@ For local UI testing, `scripts/seed-hierarchy-demo.sh` creates an idempotent sq 
 
 - `PI_TASKS_TODO_PATH` - override the TODO file path
 - `PI_TASKS_BACKEND` - to explicitly choose a backend implementation. Currently supported values:
+  - `tasks`
   - `sq`
   - `tq`
   - `beads`
   - `todo-md`
+
+Tasks backend, all optional:
+
+- `PI_TASKS_TASKS_CATEGORY` - use this category instead of the one derived from the directory name. Setting it activates the backend even before a task uses the category.
+- `PI_TASKS_TASKS_COMMAND` - path to the Tasks backend executable or its built `dist/backend/cli.js`. Skips auto-detection.
+- `PI_TASKS_TASKS_DB` - path to `tasks.db`. Defaults to `TASKS_DATABASE_PATH`, then the platform data directory.
+- `PI_TASKS_TASKS_SYNC_ROOT` - canonical JSON root used for category detection. Defaults to `TASKS_SYNC_ROOT`, then `sync` beside the database.
+- `PI_TASKS_TASKS_DATA_DIR` - directory holding `tasks.db`, for a Tasks profile that does not live in the default data directory.
+- `TASKS_REPO` - extra Tasks checkout to search for a runnable backend.
