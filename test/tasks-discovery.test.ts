@@ -1,12 +1,13 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   categoryCandidatesForDirectory,
   detectCategorySlug,
   directoryCategoryCandidates,
+  resolveLaunchCandidates,
   resolveTasksWorkspace,
 } from "../src/backend/adapters/tasks/discovery.ts"
 
@@ -72,6 +73,28 @@ test("detection tolerates a missing or unreadable workspace", () => {
   writeFileSync(join(syncRoot, "tasks", "broken.json"), "{ not json")
 
   assert.equal(detectCategorySlug(syncRoot, ["pi-tasks"]), "pi-tasks")
+})
+
+test("the backend command is expected on PATH unless it is configured", () => {
+  const workspace = { databasePath: "/data/tasks.db", syncRoot: "/data/sync" }
+  const stdioArgs = ["--stdio", "--database", "/data/tasks.db"]
+
+  assert.deepEqual(resolveLaunchCandidates(workspace, {}), [
+    { label: "tasks-backend on PATH", command: "tasks-backend", args: stdioArgs },
+  ])
+
+  const [absolute] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "/opt/tasks/tasks-backend" })
+  assert.deepEqual(absolute, { label: "PI_TASKS_TASKS_COMMAND", command: "/opt/tasks/tasks-backend", args: stdioArgs })
+
+  const [bareName] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "tasks-backend" })
+  assert.equal(bareName!.command, "tasks-backend")
+
+  const [fromHome] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "~/bin/tasks-backend" })
+  assert.equal(fromHome!.command, join(homedir(), "bin", "tasks-backend"))
+
+  const [script] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "/opt/tasks/dist/backend/cli.js" })
+  assert.equal(script!.command, process.execPath)
+  assert.deepEqual(script!.args, ["/opt/tasks/dist/backend/cli.js", "--stdio", "--database", "/data/tasks.db"])
 })
 
 test("workspace paths follow pi-tasks settings before Tasks settings", () => {

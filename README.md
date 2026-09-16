@@ -68,22 +68,21 @@ Because Tasks derives `@category` from task text, the adapter keeps the scope to
 
 Tasks talks JSON lines over the sidecar's stdio (`--stdio --database <path>`) through one shared child process that is respawned on demand. Task ids are UUIDs, so the list shows an eight character prefix that the adapter resolves back to the full id; longer prefixes disambiguate.
 
-The backend is located from `PI_TASKS_TASKS_COMMAND`, then the sidecar or `dist/backend/cli.js` of the checkouts in `TASKS_REPO` and `$SRC/products/tasks`, then `tasks-backend` and `tasks` on `PATH`. Where a Tasks install puts that sidecar:
+The backend is expected on `PATH` as `tasks-backend`, the command Tasks ships for agent use alongside the app. Nothing is guessed about where Tasks is installed, and the app binary is never a candidate: it is named `tasks` and running it opens a window. When `tasks-backend` is not reachable, `PI_TASKS_TASKS_COMMAND` points at it explicitly.
 
-| Install | Sidecar | Needs setup |
-| --- | --- | --- |
-| Development checkout | `src-tauri/binaries/tasks-backend-<target triple>` | no |
-| `.deb` / `.rpm` | `/usr/bin/tasks-backend`, beside `/usr/bin/tasks` | no |
-| AppImage | `usr/bin/tasks-backend` inside the image, under a mount point that changes each run | yes |
+| Situation | Setup |
+| --- | --- |
+| Installed from `.deb` / `.rpm` | none, `/usr/bin/tasks-backend` is already on `PATH` |
+| Development build | symlink it under the packaged name (below) or set `PI_TASKS_TASKS_COMMAND` |
+| AppImage | extract it, then set `PI_TASKS_TASKS_COMMAND` to `squashfs-root/usr/bin/tasks-backend` |
+| Backend from source | `pnpm build:backend`, then `PI_TASKS_TASKS_COMMAND=<checkout>/dist/backend/cli.js`, which runs on the same Node as pi |
 
-For an AppImage, point at the extracted files rather than the mounted image. `--appimage-extract` produces them, and a development build leaves the same tree in `src-tauri/target/release/bundle/appimage/Tasks.AppDir`:
+A development build names the sidecar after its target triple, so adding `src-tauri/binaries` to `PATH` does not put `tasks-backend` on `PATH`. Give it the packaged name instead:
 
 ```bash
-./Tasks_0.1.0_amd64.AppImage --appimage-extract
-export PI_TASKS_TASKS_COMMAND="$PWD/squashfs-root/usr/bin/tasks-backend"
+host_tuple="$(rustc -vV | sed -n 's/^host: //p')"
+ln -s "$SRC/products/tasks/src-tauri/binaries/tasks-backend-$host_tuple" ~/.local/bin/tasks-backend
 ```
-
-Symlinking that sidecar into `~/.local/bin` works too, since that directory is usually on `PATH`.
 
 Tasks has no task types or due dates, so the type stays `task` and `dueAt` is never sent. Status and priority map directly:
 
@@ -137,8 +136,7 @@ For local UI testing, `scripts/seed-hierarchy-demo.sh` creates an idempotent sq 
 Tasks backend, all optional:
 
 - `PI_TASKS_TASKS_CATEGORY` - use this category instead of the one derived from the directory name. Setting it activates the backend even before a task uses the category.
-- `PI_TASKS_TASKS_COMMAND` - path to the Tasks backend executable or its built `dist/backend/cli.js`. Skips auto-detection.
+- `PI_TASKS_TASKS_COMMAND` - the backend command or path, for a development build, an extracted AppImage sidecar, or `cli.js`. Replaces the `PATH` lookup; a bare name still resolves through `PATH`.
 - `PI_TASKS_TASKS_DB` - path to `tasks.db`. Defaults to `TASKS_DATABASE_PATH`, then the platform data directory.
 - `PI_TASKS_TASKS_SYNC_ROOT` - canonical JSON root used for category detection. Defaults to `TASKS_SYNC_ROOT`, then `sync` beside the database.
 - `PI_TASKS_TASKS_DATA_DIR` - directory holding `tasks.db`, for a Tasks profile that does not live in the default data directory.
-- `TASKS_REPO` - extra Tasks checkout to search for a runnable backend.

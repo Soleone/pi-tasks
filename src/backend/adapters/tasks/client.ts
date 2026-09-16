@@ -140,7 +140,8 @@ export class TasksProtocolClient {
     throw new Error([
       "Could not reach a Tasks backend.",
       ...failures,
-      "Set PI_TASKS_TASKS_COMMAND to the Tasks backend executable or its built cli.js.",
+      "Install Tasks so `tasks-backend` is on PATH, or set PI_TASKS_TASKS_COMMAND to a",
+      "development build, an extracted AppImage sidecar, or the backend's cli.js.",
     ].join("\n"))
   }
 

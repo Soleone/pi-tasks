@@ -1,17 +1,17 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { categorySlugsIn } from "./mapping.ts"
 
 /** Data directory name used by the Tasks desktop app (`com.soleone.tasks`). */
 const TASKS_APP_DATA_DIR = "com.soleone.tasks"
-const TASKS_SIDECAR_TARGETS: Record<string, string> = {
-  "linux-x64": "tasks-backend-x86_64-unknown-linux-gnu",
-  "linux-arm64": "tasks-backend-aarch64-unknown-linux-gnu",
-  "darwin-arm64": "tasks-backend-aarch64-apple-darwin",
-  "darwin-x64": "tasks-backend-x86_64-apple-darwin",
-  "win32-x64": "tasks-backend-x86_64-pc-windows-msvc.exe",
-}
+
+/**
+ * Command name a Tasks install is expected to provide on `PATH`. Packaged deb
+ * and rpm builds place it in `/usr/bin` beside the app. The app binary itself
+ * is named `tasks` and opens a window, so it is never a candidate here.
+ */
+const TASKS_COMMAND = "tasks-backend"
 interface CanonicalTaskFile {
   format?: unknown
   status?: unknown
@@ -72,40 +72,27 @@ export function resolveTasksWorkspace(environment: Environment = process.env): T
   return { databasePath, syncRoot }
 }
 
+/** A `.js` command runs under the same Node that pi itself runs on. */
 function isScriptFile(command: string): boolean {
   return /\.(js|mjs|cjs)$/i.test(command)
 }
 
-function scriptCandidate(label: string, scriptPath: string, databasePath: string): TasksLaunchCandidate {
-  return {
-    label,
-    command: process.execPath,
-    args: [scriptPath, "--stdio", "--database", databasePath],
-  }
+/** Bare names stay bare so the shell can resolve them through `PATH`. */
+function expandCommand(command: string): string {
+  return command.includes("/") || command.includes("\\") ? expandPath(command) : command
 }
 
-function sidecarCandidate(label: string, executablePath: string, databasePath: string): TasksLaunchCandidate {
-  return { label, command: executablePath, args: ["--stdio", "--database", databasePath] }
-}
-
-/** Candidate Tasks checkouts, in the order they should be trusted. */
-function tasksRepositories(environment: Environment): string[] {
-  const repositories = [environment.TASKS_REPO]
-
-  if (environment.SRC) repositories.push(join(environment.SRC, "products", "tasks"))
-
-  return repositories.filter((repository): repository is string => Boolean(repository))
-}
-
-function sidecarNames(): string[] {
-  const current = TASKS_SIDECAR_TARGETS[`${process.platform}-${process.arch}`]
-  return current ? [current] : Object.keys(TASKS_SIDECAR_TARGETS).map(key => TASKS_SIDECAR_TARGETS[key]!)
+function commandCandidate(command: string, databasePath: string, label: string): TasksLaunchCandidate {
+  return isScriptFile(command)
+    ? { label, command: process.execPath, args: [command, "--stdio", "--database", databasePath] }
+    : { label, command, args: ["--stdio", "--database", databasePath] }
 }
 
 /**
- * Ways to reach the Tasks command path. Configured commands come first, then
- * build output of known checkouts, then well-known names on `PATH`. Existence
- * is checked where possible; `PATH` entries fail fast on spawn.
+ * Ways to reach the Tasks command path: `PI_TASKS_TASKS_COMMAND` when set, for
+ * development builds and AppImage extracts, otherwise the `tasks-backend`
+ * command a Tasks install puts on `PATH`. Nothing is guessed about where a
+ * Tasks checkout or app might live on this machine.
  */
 export function resolveLaunchCandidates(
   workspace: TasksWorkspace,
@@ -113,27 +100,10 @@ export function resolveLaunchCandidates(
 ): TasksLaunchCandidate[] {
   const configured = environment.PI_TASKS_TASKS_COMMAND?.trim()
   if (configured) {
-    return [isScriptFile(configured)
-      ? scriptCandidate("PI_TASKS_TASKS_COMMAND", expandPath(configured), workspace.databasePath)
-      : sidecarCandidate("PI_TASKS_TASKS_COMMAND", expandPath(configured), workspace.databasePath)]
+    return [commandCandidate(expandCommand(configured), workspace.databasePath, "PI_TASKS_TASKS_COMMAND")]
   }
 
-  const candidates: TasksLaunchCandidate[] = []
-
-  for (const repository of tasksRepositories(environment)) {
-    for (const sidecar of sidecarNames()) {
-      const sidecarPath = join(repository, "src-tauri", "binaries", sidecar)
-      if (existsSync(sidecarPath)) candidates.push(sidecarCandidate(sidecarPath, sidecarPath, workspace.databasePath))
-    }
-
-    const cliPath = join(repository, "dist", "backend", "cli.js")
-    if (existsSync(cliPath)) candidates.push(scriptCandidate(cliPath, cliPath, workspace.databasePath))
-  }
-
-  candidates.push(sidecarCandidate("tasks-backend on PATH", "tasks-backend", workspace.databasePath))
-  candidates.push(sidecarCandidate("tasks on PATH", "tasks", workspace.databasePath))
-
-  return candidates
+  return [commandCandidate(TASKS_COMMAND, workspace.databasePath, `${TASKS_COMMAND} on PATH`)]
 }
 
 /**
