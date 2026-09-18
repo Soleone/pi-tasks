@@ -198,7 +198,7 @@ test("tasks updates keep the category token in the title", async () => {
   })
 })
 
-test("tasks updates leave an existing category token where it is", async () => {
+test("tasks updates move a description-only category token into the title", async () => {
   const { adapter, calls } = createHarness([
     taskFixture({
       id: "aaaa1111-0000-4000-8000-000000000000",
@@ -209,8 +209,22 @@ test("tasks updates leave an existing category token where it is", async () => {
 
   await adapter.update("aaaa1111-0000-4000-8000-000000000000", { description: "still @pi-tasks" })
 
-  assert.equal(calls[1]!.args.title, "Tracked in the notes")
+  assert.equal(calls[1]!.args.title, "Tracked in the notes @pi-tasks")
   assert.equal(calls[1]!.args.descriptionMarkdown, "still @pi-tasks")
+})
+
+test("tasks scope ignores category-looking text in descriptions and code", async () => {
+  const { adapter, calls } = createHarness([
+    taskFixture({
+      id: "aaaa1111-0000-4000-8000-000000000000",
+      title: "Tracked in the notes",
+      descriptionMarkdown: "mention @other",
+    }),
+  ])
+
+  await adapter.update("aaaa1111-0000-4000-8000-000000000000", { title: "Use `@other` in an example" })
+
+  assert.equal(calls[1]!.args.title, "Use `@other` in an example @pi-tasks")
 })
 
 test("tasks updates reject a foreign category and report the scope", async () => {
@@ -235,16 +249,14 @@ test("tasks updates send one command per change with the running version", async
     blockedBy: ["bbbb2222-0000-4000-8000-000000000000"],
   })
 
-  assert.deepEqual(calls.slice(1).map(call => call.command), [
+  const mutations = calls.slice(1).filter(call => call.args.expectedVersion !== undefined)
+  assert.deepEqual(mutations.map(call => call.command), [
     "task.update",
     "task.start",
     "task.move",
     "task.dependency.add",
   ])
-  assert.deepEqual(
-    calls.slice(1).map(call => call.args.expectedVersion),
-    [1, 2, 3, 4],
-  )
+  assert.deepEqual(mutations.map(call => call.args.expectedVersion), [1, 2, 3, 4])
   assert.equal(calls[1]!.args.priority, 1)
   assert.equal(calls[3]!.args.parentId, "bbbb2222-0000-4000-8000-000000000000")
 })
@@ -281,7 +293,7 @@ test("tasks create stays in scope and applies the requested state", async () => 
   assert.equal(created.title, "Brand new @pi-tasks")
   assert.equal(created.status, "inProgress")
   assert.deepEqual(
-    calls.filter(call => call.command !== "task.list").map(call => call.command),
+    calls.filter(call => call.command !== "task.list" && call.command !== "task.get").map(call => call.command),
     ["task.create", "task.start", "task.dependency.add"],
   )
   assert.equal(calls[0]!.args.title, "Brand new @pi-tasks")
@@ -289,10 +301,31 @@ test("tasks create stays in scope and applies the requested state", async () => 
   assert.equal(calls.find(call => call.command === "task.dependency.add")!.args.dependsOnId, "bbbb2222-0000-4000-8000-000000000000")
 })
 
+test("tasks create appends scope even when the description mentions a category", async () => {
+  const { adapter } = createHarness([])
+
+  const created = await adapter.create({ title: "A note", description: "See @other for context" })
+
+  assert.equal(created.title, "A note @pi-tasks")
+})
+
 test("tasks create rejects an empty title", async () => {
   const { adapter } = createHarness([])
 
   await assert.rejects(() => adapter.create({ title: "   " }), /Title is required/)
+})
+
+test("tasks reject unsupported fields instead of silently dropping them", async () => {
+  const { adapter } = createHarness([taskFixture({ id: "aaaa1111-0000-4000-8000-000000000000" })])
+
+  await assert.rejects(() => adapter.create({ title: "A task", dueAt: "2026-09-10" }), /does not support due dates/)
+  await assert.rejects(() => adapter.create({ title: "A task", taskType: "bug" }), /does not support task type bug/)
+  await assert.rejects(() => adapter.create({ title: "A task", priority: "p9" }), /Unsupported priority/)
+  await assert.rejects(() => adapter.create({ title: "A task", status: "blocked" }), /cannot be set directly/)
+  await assert.rejects(() => adapter.update("aaaa1111-0000-4000-8000-000000000000", { dueAt: "2026-09-10" }), /does not support due dates/)
+  await assert.rejects(() => adapter.update("aaaa1111-0000-4000-8000-000000000000", { taskType: "bug" }), /does not support task type bug/)
+  await assert.rejects(() => adapter.update("aaaa1111-0000-4000-8000-000000000000", { priority: "p9" }), /Unsupported priority/)
+  await assert.rejects(() => adapter.update("aaaa1111-0000-4000-8000-000000000000", { status: "blocked" }), /cannot be set directly/)
 })
 
 test("tasks resolves short id prefixes and refuses ambiguous ones", async () => {
@@ -306,6 +339,86 @@ test("tasks resolves short id prefixes and refuses ambiguous ones", async () => 
   assert.ok(calls.some(call => call.command === "task.get" && call.args.id === "abcd1111-0000-4000-8000-000000000000"))
 
   await assert.rejects(() => adapter.show("abcd"), /matches 2 tasks/)
+})
+
+test("tasks normalize short parent and blocker references", async () => {
+  const { adapter, calls } = createHarness([
+    taskFixture({ id: "aaaa1111-0000-4000-8000-000000000000", title: "Work @pi-tasks" }),
+    taskFixture({ id: "bbbb2222-0000-4000-8000-000000000000", title: "Related @pi-tasks" }),
+  ])
+
+  await adapter.update("aaaa1111-0000-4000-8000-000000000000", {
+    parentRef: "bbbb2222",
+    blockedBy: ["bbbb2222"],
+  })
+
+  assert.equal(calls.find(call => call.command === "task.move")!.args.parentId, "bbbb2222-0000-4000-8000-000000000000")
+  assert.equal(calls.find(call => call.command === "task.dependency.add")!.args.dependsOnId, "bbbb2222-0000-4000-8000-000000000000")
+})
+
+test("tasks list resolves blocker details outside the requested status scope", async () => {
+  const { adapter, calls } = createHarness([
+    taskFixture({
+      id: "aaaa1111-0000-4000-8000-000000000000",
+      title: "Work @pi-tasks",
+      dependencyIds: ["bbbb2222-0000-4000-8000-000000000000"],
+      blockedByIds: ["bbbb2222-0000-4000-8000-000000000000"],
+    }),
+    taskFixture({
+      id: "bbbb2222-0000-4000-8000-000000000000",
+      title: "Completed blocker @pi-tasks",
+      status: "done",
+    }),
+  ])
+
+  const tasks = await adapter.list()
+  const work = tasks.find(task => task.ref.startsWith("aaaa"))!
+
+  assert.deepEqual(work.blockers, [{
+    ref: "bbbb2222-0000-4000-8000-000000000000",
+    title: "Completed blocker @pi-tasks",
+    status: "closed",
+  }])
+  assert.ok(calls.some(call => call.command === "task.get" && call.args.id === "bbbb2222-0000-4000-8000-000000000000"))
+})
+
+test("tasks enforce category scope for full ids", async () => {
+  const foreignId = "bbbb2222-0000-4000-8000-000000000000"
+  const { adapter } = createHarness([
+    taskFixture({ id: foreignId, title: "Foreign @other", category: { slug: "other", label: "other" } }),
+  ])
+
+  await assert.rejects(() => adapter.show(foreignId), /outside the @pi-tasks category scope/)
+  await assert.rejects(() => adapter.update(foreignId, { status: "inProgress" }), /outside the @pi-tasks category scope/)
+})
+
+test("tasks transition from canceled through reopen when needed", async () => {
+  const { adapter, calls } = createHarness([
+    taskFixture({
+      id: "aaaa1111-0000-4000-8000-000000000000",
+      title: "Canceled @pi-tasks",
+      status: "canceled",
+    }),
+  ])
+
+  await adapter.update("aaaa1111-0000-4000-8000-000000000000", { status: "inProgress" })
+
+  assert.deepEqual(calls.slice(1).map(call => call.command), ["task.reopen", "task.start"])
+  assert.deepEqual(calls.slice(1).map(call => call.args.expectedVersion), [1, 2])
+})
+
+test("tasks treat canceled as already closed when updating state", async () => {
+  const { adapter, calls } = createHarness([
+    taskFixture({
+      id: "aaaa1111-0000-4000-8000-000000000000",
+      title: "Canceled @pi-tasks",
+      status: "canceled",
+    }),
+  ])
+
+  await adapter.update("aaaa1111-0000-4000-8000-000000000000", { status: "closed" })
+
+  assert.equal(calls.filter(call => call.command.startsWith("task.") && call.command !== "task.get").length, 0)
 })
 
 test("tasks show resolves blocker details without changing the lifecycle status", async () => {

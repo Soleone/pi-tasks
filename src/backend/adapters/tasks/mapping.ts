@@ -91,8 +91,16 @@ export function isFullTaskId(ref: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref.trim())
 }
 
+function searchableText(text: string): string {
+  // Keep this in sync with Tasks' taskText.ts: classification tokens inside
+  // inline or fenced code are not categories or tags there either.
+  return text
+    .replace(/```[\s\S]*?(?:```|$)/g, block => block.replace(/[^\n]/g, " "))
+    .replace(/`[^`\n]*`/g, code => code.replace(/[^\n]/g, " "))
+}
+
 export function categorySlugsIn(text: string): string[] {
-  return [...text.matchAll(CATEGORY_TOKEN_PATTERN)]
+  return [...searchableText(text).matchAll(CATEGORY_TOKEN_PATTERN)]
     .map(match => (match[2] ?? "").toLowerCase())
     .filter(slug => slug.length > 0)
 }
@@ -103,11 +111,12 @@ export function categorySlugsIn(text: string): string[] {
  * token goes in the title, where it is visible, and a foreign category is
  * rejected rather than silently retargeting the task.
  */
-export function titleWithScope(title: string, description: string, category: string | undefined): string {
+export function titleWithScope(title: string, _description: string, category: string | undefined): string {
   if (!category) return title
 
-  const text = `${title}\n${description}`
-  const slugs = categorySlugsIn(text)
+  // Tasks derives categories from the title. @mentions in descriptions do not
+  // classify a task, so they must not satisfy or violate this scope check.
+  const slugs = categorySlugsIn(title)
   const foreign = slugs.filter(slug => slug !== category)
   if (foreign.length > 0) {
     throw new Error(`This project is scoped to the @${category} category, but the task text uses @${foreign[0]}`)

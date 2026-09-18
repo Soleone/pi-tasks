@@ -8,7 +8,7 @@ import type {
   TaskSessionContextMessage,
   TaskUpdate,
 } from "../../api.ts"
-import type { Task } from "../../../models/task.ts"
+import type { Task, TaskStatus } from "../../../models/task.ts"
 import { PRIORITIES, PRIORITY_HOTKEYS } from "../shared/constants.ts"
 import { sortActiveTasks, sortClosedTasks } from "../shared/sorting.ts"
 import {
@@ -38,6 +38,42 @@ const DEFAULT_PRIORITY = 2
 /** Tasks has no task type concept, so the UI keeps a single non-cycling value. */
 const TASK_TYPES = ["task"]
 
+function validateSupportedInput(input: Pick<TaskUpdate, "dueAt" | "priority" | "status" | "taskType">): void {
+  if (input.dueAt !== undefined) {
+    throw new Error("The Tasks backend does not support due dates")
+  }
+  if (input.taskType !== undefined && input.taskType !== "task") {
+    throw new Error(`The Tasks backend does not support task type ${input.taskType}`)
+  }
+  if (input.priority !== undefined && toBackendPriority(input.priority) === undefined) {
+    throw new Error(`Unsupported priority for tasks backend: ${input.priority}`)
+  }
+  if (input.status !== undefined && !["open", "inProgress", "deferred", "closed", "blocked"].includes(input.status)) {
+    throw new Error(`Unsupported status for tasks backend: ${input.status}`)
+  }
+  if (input.status === "blocked") {
+    throw new Error("The Tasks backend derives blocked status from dependencies; it cannot be set directly")
+  }
+}
+
+function transitionCommands(currentStatus: string, desiredStatus: TaskStatus): string[] {
+  const desiredBackendStatus = toBackendStatus(desiredStatus)
+  if (currentStatus === desiredBackendStatus || (desiredBackendStatus === "done" && currentStatus === "canceled")) {
+    return []
+  }
+
+  // Tasks does not allow pause/start from canceled, and does not allow pause
+  // from done. Reopen first, then apply the requested state.
+  if (desiredBackendStatus === "in_progress" && currentStatus === "canceled") {
+    return ["task.reopen", "task.start"]
+  }
+  if (desiredBackendStatus === "paused" && (currentStatus === "done" || currentStatus === "canceled")) {
+    return ["task.reopen", "task.pause"]
+  }
+
+  return [transitionCommand(desiredStatus)]
+}
+
 export interface TasksRequest {
   <T>(command: string, args?: Record<string, unknown>): Promise<T>
 }
@@ -63,7 +99,7 @@ function sessionContext(category: string | undefined): TaskSessionContextMessage
       "Outside the Tasks UI, commands go to the backend as JSON lines (`--stdio --database <path>`):",
       "runtime.probe, task.list, task.get, task.create, task.update, task.start, task.pause,",
       "task.complete, task.reopen, task.move, task.dependency.add, task.dependency.remove.",
-      "Every mutation needs the current `expectedVersion`; task ids may be given as unambiguous prefixes.",
+      "Versioned mutations need the current `expectedVersion`; creates use idempotency and task ids may be given as unambiguous prefixes.",
     ].join(" "),
   }
 }
@@ -98,6 +134,7 @@ export function createTasksAdapter(options: TasksAdapterOptions): TaskAdapter {
     return records
   }
 
+  /** Tasks addresses tasks by UUID, but the list shows a short id prefix. */
   async function matchingIds(prefix: string): Promise<string[]> {
     const needle = prefix.trim().toLowerCase()
     if (needle.length === 0) return []
@@ -106,10 +143,22 @@ export function createTasksAdapter(options: TasksAdapterOptions): TaskAdapter {
     return [...active, ...closed].map(record => record.id).filter(id => id.toLowerCase().startsWith(needle))
   }
 
-  /** Tasks addresses tasks by UUID, but the list shows a short id prefix. */
+  async function getRecordById(id: string): Promise<TasksTaskRecord> {
+    const result = await request<{ task?: TasksTaskRecord }>("task.get", { id })
+    if (!result.task) throw new Error(`Tasks backend returned no task for ${id}`)
+    return result.task
+  }
+
+  function assertInScope(record: TasksTaskRecord): void {
+    if (category && record.category?.slug !== category) {
+      throw new Error(`Task "${record.id}" is outside the @${category} category scope`)
+    }
+  }
+
   async function resolveRef(ref: string): Promise<string> {
     const trimmed = ref.trim()
-    if (isFullTaskId(trimmed)) return trimmed
+    if (trimmed.length === 0) throw new Error("Task reference is required")
+    if (isFullTaskId(trimmed)) return trimmed.toLowerCase()
 
     const matches = await matchingIds(trimmed)
     if (matches.length === 1) return matches[0]!
@@ -120,14 +169,10 @@ export function createTasksAdapter(options: TasksAdapterOptions): TaskAdapter {
     throw new Error(`No task matches "${trimmed}"${category ? ` in the @${category} category` : ""}`)
   }
 
-  async function getRecordById(id: string): Promise<TasksTaskRecord> {
-    const result = await request<{ task?: TasksTaskRecord }>("task.get", { id })
-    if (!result.task) throw new Error(`Tasks backend returned no task for ${id}`)
-    return result.task
-  }
-
   async function getRecord(ref: string): Promise<TasksTaskRecord> {
-    return getRecordById(await resolveRef(ref))
+    const record = await getRecordById(await resolveRef(ref))
+    assertInScope(record)
+    return record
   }
 
   async function mutate(
@@ -141,8 +186,12 @@ export function createTasksAdapter(options: TasksAdapterOptions): TaskAdapter {
     return result.task
   }
 
-  async function blockerContext(record: TasksTaskRecord): Promise<Map<string, TasksTaskRecord>> {
-    const blockers = await Promise.all(record.blockedByIds.map(async ref => {
+  async function recordsWithBlockerContext(records: readonly TasksTaskRecord[]): Promise<Map<string, TasksTaskRecord>> {
+    const known = new Map(records.map(record => [record.id, record]))
+    const missing = new Set(
+      records.flatMap(record => record.blockedByIds).filter(ref => !known.has(ref)),
+    )
+    const blockers = await Promise.all([...missing].map(async ref => {
       try {
         return await getRecordById(ref)
       } catch {
@@ -150,7 +199,10 @@ export function createTasksAdapter(options: TasksAdapterOptions): TaskAdapter {
       }
     }))
 
-    return new Map(blockers.filter((blocker): blocker is TasksTaskRecord => Boolean(blocker)).map(blocker => [blocker.id, blocker]))
+    for (const blocker of blockers) {
+      if (blocker) known.set(blocker.id, blocker)
+    }
+    return known
   }
 
   function scopedTitle(title: string, description: string): string {
@@ -188,7 +240,7 @@ export function createTasksAdapter(options: TasksAdapterOptions): TaskAdapter {
 
     async list(scope: TaskListScope = "active"): Promise<Task[]> {
       const records = await listRecords(scope === "closed")
-      const known = new Map(records.map(record => [record.id, record]))
+      const known = await recordsWithBlockerContext(records)
       const tasks = records.map(record => toTask(record, known))
 
       const childCounts = new Map<string, number>()
@@ -202,50 +254,72 @@ export function createTasksAdapter(options: TasksAdapterOptions): TaskAdapter {
 
     async show(ref: string): Promise<Task> {
       const record = await getRecord(ref)
-      return toTask(record, await blockerContext(record))
+      return toTask(record, await recordsWithBlockerContext([record]))
     },
 
     async update(ref: string, update: TaskUpdate): Promise<void> {
-      const id = await resolveRef(ref)
-      if (update.parentRef === id) throw new Error("A task cannot be its own parent")
-      if (update.blockedBy?.includes(id)) throw new Error("A task cannot block itself")
+      validateSupportedInput(update)
+      let current = await getRecord(ref)
+      const id = current.id
 
-      let current = await getRecordById(id)
+      let nextParentId: string | null | undefined
+      if (update.parentRef !== undefined) {
+        nextParentId = update.parentRef === null ? null : await resolveRef(update.parentRef)
+        if (nextParentId === id) throw new Error("A task cannot be its own parent")
+      }
+
+      let desiredDependencyIds: string[] | undefined
+      if (update.blockedBy !== undefined) {
+        desiredDependencyIds = [...new Set(await Promise.all(
+          [...new Set(update.blockedBy)].map(dependencyRef => resolveRef(dependencyRef)),
+        ))]
+        if (desiredDependencyIds.includes(id)) throw new Error("A task cannot block itself")
+      }
 
       const content = contentUpdate(update, current)
       if (Object.keys(content).length > 0) {
         current = await mutate("task.update", id, current.version, content)
       }
 
-      if (update.status && update.status !== "blocked" && toBackendStatus(update.status) !== current.status) {
-        current = await mutate(transitionCommand(update.status), id, current.version, {})
+      if (update.status !== undefined) {
+        for (const command of transitionCommands(current.status, update.status)) {
+          current = await mutate(command, id, current.version, {})
+        }
       }
 
-      if (update.parentRef !== undefined && (update.parentRef ?? null) !== current.parentId) {
-        current = await mutate("task.move", id, current.version, { parentId: update.parentRef ?? null })
+      if (nextParentId !== undefined && nextParentId !== current.parentId) {
+        current = await mutate("task.move", id, current.version, { parentId: nextParentId })
       }
 
-      if (update.blockedBy !== undefined) {
+      if (desiredDependencyIds !== undefined) {
         // Canceled dependencies stay untouched: they are history rather than
         // readiness, and the UI never sees them as blockers.
-        const desired = [...new Set(update.blockedBy)]
-        for (const ref of current.blockedByIds.filter(candidate => !desired.includes(candidate))) {
-          current = await mutate("task.dependency.remove", id, current.version, { dependsOnId: ref })
+        for (const dependencyId of current.blockedByIds.filter(candidate => !desiredDependencyIds.includes(candidate))) {
+          current = await mutate("task.dependency.remove", id, current.version, { dependsOnId: dependencyId })
         }
-        for (const ref of desired.filter(candidate => !current.blockedByIds.includes(candidate))) {
-          current = await mutate("task.dependency.add", id, current.version, { dependsOnId: await resolveRef(ref) })
+        for (const dependencyId of desiredDependencyIds.filter(candidate => !current.blockedByIds.includes(candidate))) {
+          current = await mutate("task.dependency.add", id, current.version, { dependsOnId: dependencyId })
         }
       }
     },
 
     async create(input: CreateTaskInput): Promise<Task> {
+      validateSupportedInput(input)
       const description = input.description ?? ""
+      const priority = input.priority === undefined ? DEFAULT_PRIORITY : toBackendPriority(input.priority)
+      if (priority === undefined) {
+        // validateSupportedInput handles this for normal callers; retain a
+        // narrow guard for values arriving through JavaScript at runtime.
+        throw new Error(`Unsupported priority for tasks backend: ${input.priority}`)
+      }
       const args: Record<string, unknown> = {
         title: scopedTitle(input.title.trim(), description),
         descriptionMarkdown: description,
-        priority: toBackendPriority(input.priority) ?? DEFAULT_PRIORITY,
+        priority,
       }
-      if (input.parentRef) args.parentId = await resolveRef(input.parentRef)
+      if (input.parentRef !== undefined && input.parentRef !== null) {
+        args.parentId = await resolveRef(input.parentRef)
+      }
 
       const created = (await request<{ task?: TasksTaskRecord }>("task.create", args)).task
       if (!created) throw new Error("Tasks backend returned no task for task.create")
@@ -265,6 +339,9 @@ export function createTasksAdapter(options: TasksAdapterOptions): TaskAdapter {
 
 interface Detection {
   directory: string
+  databasePath: string
+  syncRoot: string
+  candidatesKey: string
   category: string | undefined
 }
 
@@ -272,10 +349,17 @@ let detection: Detection | null = null
 
 function detectCategory(workspace: TasksWorkspace): string | undefined {
   const directory = process.cwd()
-  if (detection?.directory === directory) return detection.category
+  const candidates = categoryCandidatesForDirectory(basename(directory))
+  const candidatesKey = candidates.join("\u0000")
+  if (
+    detection?.directory === directory
+    && detection.databasePath === workspace.databasePath
+    && detection.syncRoot === workspace.syncRoot
+    && detection.candidatesKey === candidatesKey
+  ) return detection.category
 
-  const category = detectCategorySlug(workspace.syncRoot, categoryCandidatesForDirectory(basename(directory)))
-  detection = { directory, category }
+  const category = detectCategorySlug(workspace.syncRoot, candidates)
+  detection = { directory, databasePath: workspace.databasePath, syncRoot: workspace.syncRoot, candidatesKey, category }
   return category
 }
 

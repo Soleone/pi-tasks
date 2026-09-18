@@ -47,14 +47,24 @@ test("an explicit category override replaces the directory name", () => {
   assert.deepEqual(categoryCandidatesForDirectory("pi-tasks", {}), ["pi-tasks"])
 })
 
-test("detection matches the directory name against task categories", () => {
+test("detection matches the directory name against task categories in titles", () => {
   const syncRoot = workspaceFixture([
     { id: "one", title: "Something @other" },
-    { id: "two", title: "Prepare release", description: "Keep an eye on @pi-tasks" },
+    { id: "two", title: "Prepare release @pi-tasks", description: "Keep an eye on @other" },
   ])
 
   assert.equal(detectCategorySlug(syncRoot, ["pi-tasks"]), "pi-tasks")
   assert.equal(detectCategorySlug(syncRoot, ["nope"]), undefined)
+})
+
+test("detection ignores category-looking text in descriptions and code", () => {
+  const syncRoot = workspaceFixture([
+    { id: "one", title: "Description only", description: "Keep an eye on @pi-tasks" },
+    { id: "two", title: "Inline `@pi-tasks`" },
+    { id: "three", title: "Fenced code", description: "```\n@pi-tasks\n```" },
+  ])
+
+  assert.equal(detectCategorySlug(syncRoot, ["pi-tasks"]), undefined)
 })
 
 test("detection ignores categories that only exist on canceled tasks", () => {
@@ -95,6 +105,13 @@ test("the backend command is expected on PATH unless it is configured", () => {
   const [script] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "/opt/tasks/dist/backend/cli.js" })
   assert.equal(script!.command, process.execPath)
   assert.deepEqual(script!.args, ["/opt/tasks/dist/backend/cli.js", "--stdio", "--database", "/data/tasks.db"])
+
+  const [customSyncRoot] = resolveLaunchCandidates(workspace, {
+    PI_TASKS_TASKS_SYNC_ROOT: "/shared/tasks",
+    PATH: "/usr/bin",
+  })
+  assert.equal(customSyncRoot!.env?.TASKS_SYNC_ROOT, "/data/sync")
+  assert.equal(customSyncRoot!.env?.PI_TASKS_TASKS_SYNC_ROOT, "/shared/tasks")
 })
 
 test("workspace paths follow pi-tasks settings before Tasks settings", () => {
@@ -111,4 +128,13 @@ test("workspace paths follow pi-tasks settings before Tasks settings", () => {
     PI_TASKS_TASKS_SYNC_ROOT: "/data/pi/canonical",
   })
   assert.equal(explicitSyncRoot.syncRoot, "/data/pi/canonical")
+
+  const emptyOverrides = resolveTasksWorkspace({
+    PI_TASKS_TASKS_DB: " ",
+    TASKS_DATABASE_PATH: "/data/tasks.db",
+    PI_TASKS_TASKS_SYNC_ROOT: "",
+    TASKS_SYNC_ROOT: "/data/canonical",
+  })
+  assert.equal(emptyOverrides.databasePath, "/data/tasks.db")
+  assert.equal(emptyOverrides.syncRoot, "/data/canonical")
 })

@@ -16,7 +16,6 @@ interface CanonicalTaskFile {
   format?: unknown
   status?: unknown
   title?: unknown
-  descriptionMarkdown?: unknown
 }
 
 export interface TasksWorkspace {
@@ -28,6 +27,8 @@ export interface TasksLaunchCandidate {
   label: string
   command: string
   args: string[]
+  /** Environment overrides needed to keep pi-only settings aligned with Tasks. */
+  env?: Record<string, string | undefined>
 }
 
 type Environment = Record<string, string | undefined>
@@ -36,14 +37,14 @@ function defaultDataDirectory(environment: Environment): string {
   const home = homedir()
 
   if (process.platform === "win32") {
-    return join(environment.APPDATA ?? join(home, "AppData", "Roaming"), TASKS_APP_DATA_DIR)
+    return join(environment.APPDATA?.trim() || join(home, "AppData", "Roaming"), TASKS_APP_DATA_DIR)
   }
 
   if (process.platform === "darwin") {
     return join(home, "Library", "Application Support", TASKS_APP_DATA_DIR)
   }
 
-  return join(environment.XDG_DATA_HOME ?? join(home, ".local", "share"), TASKS_APP_DATA_DIR)
+  return join(environment.XDG_DATA_HOME?.trim() || join(home, ".local", "share"), TASKS_APP_DATA_DIR)
 }
 
 function expandPath(value: string): string {
@@ -57,17 +58,12 @@ function expandPath(value: string): string {
  * vars the Tasks app itself honours, then the platform data directory.
  */
 export function resolveTasksWorkspace(environment: Environment = process.env): TasksWorkspace {
-  const dataDirectory = environment.PI_TASKS_TASKS_DATA_DIR
-    ? expandPath(environment.PI_TASKS_TASKS_DATA_DIR)
-    : defaultDataDirectory(environment)
-
-  const databasePath = environment.PI_TASKS_TASKS_DB || environment.TASKS_DATABASE_PATH
-    ? expandPath(environment.PI_TASKS_TASKS_DB ?? environment.TASKS_DATABASE_PATH ?? "")
-    : join(dataDirectory, "tasks.db")
-
-  const syncRoot = environment.PI_TASKS_TASKS_SYNC_ROOT || environment.TASKS_SYNC_ROOT
-    ? expandPath(environment.PI_TASKS_TASKS_SYNC_ROOT ?? environment.TASKS_SYNC_ROOT ?? "")
-    : join(dirname(databasePath), "sync")
+  const dataDirectorySetting = environment.PI_TASKS_TASKS_DATA_DIR?.trim()
+  const databaseSetting = environment.PI_TASKS_TASKS_DB?.trim() || environment.TASKS_DATABASE_PATH?.trim()
+  const syncRootSetting = environment.PI_TASKS_TASKS_SYNC_ROOT?.trim() || environment.TASKS_SYNC_ROOT?.trim()
+  const dataDirectory = dataDirectorySetting ? expandPath(dataDirectorySetting) : defaultDataDirectory(environment)
+  const databasePath = databaseSetting ? expandPath(databaseSetting) : join(dataDirectory, "tasks.db")
+  const syncRoot = syncRootSetting ? expandPath(syncRootSetting) : join(dirname(databasePath), "sync")
 
   return { databasePath, syncRoot }
 }
@@ -82,10 +78,15 @@ function expandCommand(command: string): string {
   return command.includes("/") || command.includes("\\") ? expandPath(command) : command
 }
 
-function commandCandidate(command: string, databasePath: string, label: string): TasksLaunchCandidate {
+function commandCandidate(
+  command: string,
+  databasePath: string,
+  label: string,
+  env?: Record<string, string | undefined>,
+): TasksLaunchCandidate {
   return isScriptFile(command)
-    ? { label, command: process.execPath, args: [command, "--stdio", "--database", databasePath] }
-    : { label, command, args: ["--stdio", "--database", databasePath] }
+    ? { label, command: process.execPath, args: [command, "--stdio", "--database", databasePath], ...(env ? { env } : {}) }
+    : { label, command, args: ["--stdio", "--database", databasePath], ...(env ? { env } : {}) }
 }
 
 /**
@@ -98,12 +99,16 @@ export function resolveLaunchCandidates(
   workspace: TasksWorkspace,
   environment: Environment = process.env,
 ): TasksLaunchCandidate[] {
+  const configuredSyncRoot = environment.PI_TASKS_TASKS_SYNC_ROOT?.trim()
+  const childEnvironment = configuredSyncRoot
+    ? { ...environment, TASKS_SYNC_ROOT: workspace.syncRoot }
+    : undefined
   const configured = environment.PI_TASKS_TASKS_COMMAND?.trim()
   if (configured) {
-    return [commandCandidate(expandCommand(configured), workspace.databasePath, "PI_TASKS_TASKS_COMMAND")]
+    return [commandCandidate(expandCommand(configured), workspace.databasePath, "PI_TASKS_TASKS_COMMAND", childEnvironment)]
   }
 
-  return [commandCandidate(TASKS_COMMAND, workspace.databasePath, `${TASKS_COMMAND} on PATH`)]
+  return [commandCandidate(TASKS_COMMAND, workspace.databasePath, `${TASKS_COMMAND} on PATH`, childEnvironment)]
 }
 
 /**
@@ -160,9 +165,8 @@ export function detectCategorySlug(
     if (task.format !== "tasks.task" || task.status === "canceled") continue
 
     const title = typeof task.title === "string" ? task.title : ""
-    const description = typeof task.descriptionMarkdown === "string" ? task.descriptionMarkdown : ""
 
-    for (const slug of categorySlugsIn(`${title}\n${description}`)) {
+    for (const slug of categorySlugsIn(title)) {
       if (candidates.includes(slug)) return slug
     }
   }

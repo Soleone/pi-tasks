@@ -146,7 +146,10 @@ export class TasksProtocolClient {
   }
 
   private spawn(candidate: TasksLaunchCandidate): SidecarProcess {
-    const child = spawn(candidate.command, candidate.args, { stdio: ["pipe", "pipe", "pipe"] }) as SidecarProcess
+    const child = spawn(candidate.command, candidate.args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      ...(candidate.env ? { env: candidate.env } : {}),
+    }) as SidecarProcess
     child.stdout.setEncoding("utf8")
     child.stderr.setEncoding("utf8")
     child.stdin.on("error", () => undefined)

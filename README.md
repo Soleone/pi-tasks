@@ -64,11 +64,11 @@ The `tasks` backend talks to the same command path as the Tasks desktop app, so 
 
 So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only those tasks are listed. The directory name is lowercased and anything outside letters, numbers, hyphens and underscores becomes a hyphen, so `My.App` reads as `@my-app`. If no category matches, the backend stays out of the way and the next adapter is detected instead.
 
-Because Tasks derives `@category` from task text, the adapter keeps the scope token in the title: created tasks get it appended, renamed tasks keep it, and text that uses a different category is rejected instead of quietly moving the task out of the project.
+Because Tasks derives `@category` from the title, the adapter keeps the scope token there: created tasks get it appended, renamed tasks keep it, and a title that uses a different category is rejected instead of quietly moving the task out of the project.
 
 Tasks talks JSON lines over the sidecar's stdio (`--stdio --database <path>`) through one shared child process that is respawned on demand. Task ids are UUIDs, so the list shows an eight character prefix that the adapter resolves back to the full id; longer prefixes disambiguate.
 
-The backend is expected on `PATH` as `tasks-backend`, the command Tasks ships for agent use alongside the app. Nothing is guessed about where Tasks is installed, and the app binary is never a candidate: it is named `tasks` and running it opens a window. When `tasks-backend` is not reachable, `PI_TASKS_TASKS_COMMAND` points at it explicitly.
+The protocol backend is expected on `PATH` as `tasks-backend`, the sidecar Tasks uses for its JSON-lines command path. Tasks also ships a separate `tasks-cli` command for argv-oriented agent use; it is not interchangeable with `tasks-backend`, so this adapter intentionally does not probe it. Nothing is guessed about where Tasks is installed, and the app binary is never a candidate: it is named `tasks` and running it opens a window. When `tasks-backend` is not reachable, `PI_TASKS_TASKS_COMMAND` points at it explicitly.
 
 | Situation | Setup |
 | --- | --- |
@@ -84,7 +84,7 @@ host_tuple="$(rustc -vV | sed -n 's/^host: //p')"
 ln -s "$SRC/products/tasks/src-tauri/binaries/tasks-backend-$host_tuple" ~/.local/bin/tasks-backend
 ```
 
-Tasks has no task types or due dates, so the type stays `task` and `dueAt` is never sent. Status and priority map directly:
+Tasks has no task types or due dates, so the type stays `task`; unsupported task types and due dates are rejected rather than silently discarded. Status and priority map directly:
 
 | pi-tasks | Tasks |
 | --- | --- |
@@ -94,7 +94,7 @@ Tasks has no task types or due dates, so the type stays `task` and `dueAt` is ne
 | `closed` | `done` (`task.complete`); `canceled` tasks also read as closed |
 | `p0` - `p4` | priority `0` - `4` |
 
-Mutations carry the task's current `expectedVersion`, so a concurrent edit from the app surfaces as a stale-version error rather than a silent overwrite. Canceled dependencies stay in place as history; only the blockers the list shows are added or removed.
+Versioned mutations carry the task's current `expectedVersion`, so a concurrent edit from the app surfaces as a stale-version error rather than a silent overwrite. Canceled dependencies stay in place as history; only the blockers the list shows are added or removed.
 
 ### Relationships
 
@@ -136,7 +136,7 @@ For local UI testing, `scripts/seed-hierarchy-demo.sh` creates an idempotent sq 
 Tasks backend, all optional:
 
 - `PI_TASKS_TASKS_CATEGORY` - use this category instead of the one derived from the directory name. Setting it activates the backend even before a task uses the category.
-- `PI_TASKS_TASKS_COMMAND` - the backend command or path, for a development build, an extracted AppImage sidecar, or `cli.js`. Replaces the `PATH` lookup; a bare name still resolves through `PATH`.
+- `PI_TASKS_TASKS_COMMAND` - the JSON-lines backend command or path, for a development build, an extracted AppImage sidecar, or `cli.js`. Do not point it at the separate argv-oriented `tasks-cli`. Replaces the `PATH` lookup; a bare name still resolves through `PATH`.
 - `PI_TASKS_TASKS_DB` - path to `tasks.db`. Defaults to `TASKS_DATABASE_PATH`, then the platform data directory.
 - `PI_TASKS_TASKS_SYNC_ROOT` - canonical JSON root used for category detection. Defaults to `TASKS_SYNC_ROOT`, then `sync` beside the database.
 - `PI_TASKS_TASKS_DATA_DIR` - directory holding `tasks.db`, for a Tasks profile that does not live in the default data directory.
