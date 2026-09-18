@@ -3,265 +3,292 @@ import { randomUUID } from "node:crypto"
 import type { Readable, Writable } from "node:stream"
 import type { TasksLaunchCandidate } from "./discovery.ts"
 
-const PROTOCOL_VERSION = 1
-const ACTOR = { kind: "agent", label: "pi" } as const
-const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
-const CONNECT_TIMEOUT_MS = 8_000
-const IDLE_EXIT_MS = 60_000
+const COMMAND_TIMEOUT_MS = 15_000
 const MAX_STDERR_CHARS = 2_000
 
-type SidecarProcess = ChildProcessByStdio<Writable, Readable, Readable>
+type CliProcess = ChildProcessByStdio<Writable, Readable, Readable>
 
-interface PendingRequest {
-  child: SidecarProcess
-  resolve: (result: unknown) => void
-  reject: (error: Error) => void
-  timer: NodeJS.Timeout
-}
+type JsonRecord = Record<string, unknown>
 
-interface ProtocolEnvelope {
-  requestId?: unknown
-  ok?: unknown
-  result?: unknown
-  error?: { code?: unknown; message?: unknown }
-}
-
-/** A command the Tasks backend rejected; `code` is the protocol error code. */
-export class TasksBackendError extends Error {
+/** A command the Tasks CLI rejected; `code` is the backend error code. */
+export class TasksCliError extends Error {
   code: string
 
   constructor(code: string, message: string) {
     super(`${code}: ${message}`)
-    this.name = "TasksBackendError"
+    this.name = "TasksCliError"
     this.code = code
   }
 }
 
-function exitReason(candidate: TasksLaunchCandidate, code: number | null, signal: NodeJS.Signals | null): string {
+const MUTATION_COMMANDS = new Set([
+  "task.create",
+  "task.update",
+  "task.delete",
+  "task.start",
+  "task.pause",
+  "task.complete",
+  "task.reopen",
+  "task.cancel",
+  "task.status.undo",
+  "task.move",
+  "task.dependency.add",
+  "task.dependency.remove",
+])
+
+const VERSIONED_COMMANDS = new Set([
+  "task.update",
+  "task.delete",
+  "task.start",
+  "task.pause",
+  "task.complete",
+  "task.reopen",
+  "task.cancel",
+  "task.status.undo",
+  "task.move",
+  "task.dependency.add",
+  "task.dependency.remove",
+])
+
+function requiredString(args: JsonRecord, name: string): string {
+  const value = args[name]
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${name} is required`)
+  }
+  return value
+}
+
+function appendOption(argv: string[], name: string, value: unknown): void {
+  if (value === undefined) return
+  argv.push(name, String(value))
+}
+
+function appendRepeatedOption(argv: string[], name: string, value: unknown): void {
+  if (!Array.isArray(value)) {
+    if (value !== undefined) appendOption(argv, name, value)
+    return
+  }
+  for (const item of value) appendOption(argv, name, item)
+}
+
+function hasOwn(args: JsonRecord, name: string): boolean {
+  return Object.prototype.hasOwnProperty.call(args, name)
+}
+
+function commandArguments(command: string, args: JsonRecord): string[] {
+  switch (command) {
+    case "runtime.probe":
+    case "workspace.info":
+      return ["info"]
+
+    case "task.list": {
+      const argv = ["list"]
+      appendRepeatedOption(argv, "--status", args.status)
+      appendOption(argv, "--priority", args.priority)
+      appendOption(argv, "--category", args.category)
+      appendRepeatedOption(argv, "--tag", args.tags)
+      appendOption(argv, "--search", args.search)
+      appendOption(argv, "--limit", args.limit)
+      appendOption(argv, "--offset", args.offset)
+      appendOption(argv, "--sort", args.sort)
+      appendOption(argv, "--direction", args.direction)
+      if (args.unblocked === true) argv.push("--unblocked")
+      if (args.includeAncestors === true) argv.push("--include-ancestors")
+      return argv
+    }
+
+    case "task.get":
+      return ["show", requiredString(args, "id")]
+
+    case "task.create": {
+      const argv = ["add"]
+      if (hasOwn(args, "descriptionMarkdown")) appendOption(argv, "--description", args.descriptionMarkdown)
+      appendOption(argv, "--priority", args.priority)
+      if (args.parentId !== undefined && args.parentId !== null) appendOption(argv, "--parent", args.parentId)
+      // Keep a title beginning with `--` positional instead of letting the CLI
+      // interpret it as an option.
+      argv.push("--", requiredString(args, "title"))
+      return argv
+    }
+
+    case "task.update": {
+      const argv = ["update", requiredString(args, "id")]
+      appendOption(argv, "--title", args.title)
+      if (hasOwn(args, "descriptionMarkdown")) appendOption(argv, "--description", args.descriptionMarkdown)
+      appendOption(argv, "--priority", args.priority)
+      return argv
+    }
+
+    case "task.start":
+      return ["start", requiredString(args, "id")]
+    case "task.pause":
+      return ["pause", requiredString(args, "id")]
+    case "task.complete":
+      return ["complete", requiredString(args, "id")]
+    case "task.reopen":
+      return ["reopen", requiredString(args, "id")]
+    case "task.cancel":
+      return ["cancel", requiredString(args, "id")]
+    case "task.delete":
+      return ["delete", requiredString(args, "id")]
+    case "task.status.undo":
+      return ["undo", requiredString(args, "id")]
+
+    case "task.move": {
+      const argv = ["move", requiredString(args, "id")]
+      if (args.parentId === null) argv.push("--root")
+      else appendOption(argv, "--parent", args.parentId)
+      return argv
+    }
+
+    case "task.dependency.add":
+      return ["dep-add", requiredString(args, "id"), requiredString(args, "dependsOnId")]
+    case "task.dependency.remove":
+      return ["dep-remove", requiredString(args, "id"), requiredString(args, "dependsOnId")]
+
+    case "category.list":
+      return ["categories"]
+    case "tag.list":
+      return ["tags"]
+    case "activity.list": {
+      const argv = ["activity"]
+      appendOption(argv, "--task", args.taskId)
+      appendOption(argv, "--limit", args.limit)
+      return argv
+    }
+
+    default:
+      throw new Error(`The Tasks CLI does not support protocol command ${command}`)
+  }
+}
+
+function errorFromResult(result: unknown): TasksCliError | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return undefined
+  const envelope = result as JsonRecord
+  if (envelope.ok !== false || !envelope.error || typeof envelope.error !== "object" || Array.isArray(envelope.error)) {
+    return undefined
+  }
+
+  const error = envelope.error as JsonRecord
+  return new TasksCliError(
+    typeof error.code === "string" ? error.code : "UNKNOWN",
+    typeof error.message === "string" ? error.message : "Tasks CLI request failed",
+  )
+}
+
+function parseJson(stdout: string, command: string): unknown {
+  try {
+    return JSON.parse(stdout)
+  } catch {
+    throw new Error(`tasks-cli returned invalid JSON for ${command}`)
+  }
+}
+
+function stderrDetails(stderr: string): string {
+  return stderr.trim().slice(-MAX_STDERR_CHARS)
+}
+
+function exitMessage(candidate: TasksLaunchCandidate, code: number | null, signal: NodeJS.Signals | null): string {
   return `${candidate.label} exited (${signal ?? `code ${code}`})`
 }
 
-function responseError(envelope: ProtocolEnvelope): TasksBackendError {
-  const code = typeof envelope.error?.code === "string" ? envelope.error.code : "INTERNAL_ERROR"
-  const message = typeof envelope.error?.message === "string" ? envelope.error.message : "Tasks backend request failed"
-  return new TasksBackendError(code, message)
-}
-
-function withDetails(message: string, details: string): Error {
-  const trimmed = details.trim()
-  return new Error(trimmed.length > 0 ? `${message}: ${trimmed}` : message)
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /**
- * JSON-lines client for the Tasks command path. One `--stdio` child process is
- * shared by every request and respawned on demand, which keeps the sidecar warm
- * without outliving the session: the child also exits when stdin closes, and an
- * idle timeout reaps it sooner.
+ * Executes the installed Tasks CLI once per request. The CLI itself enters the
+ * same Tasks backend command path as the desktop app, but owns process startup,
+ * optimistic-version lookup, idempotency, and JSON error formatting for us.
  */
-export class TasksProtocolClient {
-  private candidates: TasksLaunchCandidate[]
-  private child: SidecarProcess | null = null
-  private preferredCandidate = 0
-  private connecting: Promise<SidecarProcess> | null = null
-  private pending = new Map<string, PendingRequest>()
-  private stdoutBuffer = ""
-  private stderrTail = ""
-  private idleTimer: NodeJS.Timeout | null = null
-  private sessionKey = randomUUID()
+export class TasksCliClient {
+  private readonly candidates: TasksLaunchCandidate[]
+  private readonly sessionKey = randomUUID()
   private requestCounter = 0
 
   constructor(candidates: TasksLaunchCandidate[]) {
     this.candidates = candidates
-    process.once("exit", () => this.close())
   }
 
-  async request<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
-    const child = await this.connect()
-    const requestId = `pi-${process.pid}-${++this.requestCounter}`
+  async request<T>(command: string, args: JsonRecord = {}): Promise<T> {
+    const candidate = this.candidates[0]
+    if (!candidate) throw new Error("No Tasks CLI command was configured")
 
-    try {
-      return await this.dispatch<T>(child, requestId, command, args, DEFAULT_REQUEST_TIMEOUT_MS)
-    } finally {
-      this.scheduleIdleExit()
-    }
-  }
-
-  close(): void {
-    const child = this.child
-    this.child = null
-    this.stdoutBuffer = ""
-    if (this.idleTimer) clearTimeout(this.idleTimer)
-    this.idleTimer = null
-    if (child && child.exitCode === null && child.signalCode === null) child.kill("SIGTERM")
-  }
-
-  private connect(): Promise<SidecarProcess> {
-    if (this.child) return Promise.resolve(this.child)
-    if (this.connecting) return this.connecting
-
-    this.connecting = this.openCandidate().then(
-      child => {
-        this.connecting = null
-        return child
-      },
-      error => {
-        this.connecting = null
-        throw error
-      },
-    )
-
-    return this.connecting
-  }
-
-  private async openCandidate(): Promise<SidecarProcess> {
-    const failures: string[] = []
-    const ordered = [
-      ...this.candidates.slice(this.preferredCandidate),
-      ...this.candidates.slice(0, this.preferredCandidate),
-    ]
-
-    for (const candidate of ordered) {
-      const child = this.spawn(candidate)
-      try {
-        await this.dispatch(child, `pi-${process.pid}-probe`, "runtime.probe", {}, CONNECT_TIMEOUT_MS)
-        this.child = child
-        this.preferredCandidate = Math.max(0, this.candidates.indexOf(candidate))
-        return child
-      } catch (error) {
-        this.handleExit(child, messageOf(error))
-        failures.push(`- ${candidate.label}: ${messageOf(error)}`)
+    const argv = commandArguments(command, args)
+    const globalArgs: string[] = []
+    if (MUTATION_COMMANDS.has(command)) {
+      globalArgs.push("--idempotency-key", `pi-${this.sessionKey}-${++this.requestCounter}`)
+      if (VERSIONED_COMMANDS.has(command) && args.expectedVersion !== undefined) {
+        appendOption(globalArgs, "--expected-version", args.expectedVersion)
       }
     }
+    globalArgs.push("--actor-kind", "agent", "--actor-label", "pi", "--json")
 
-    throw new Error([
-      "Could not reach a Tasks backend.",
-      ...failures,
-      "Install Tasks so `tasks-backend` is on PATH, or set PI_TASKS_TASKS_COMMAND to a",
-      "development build, an extracted AppImage sidecar, or the backend's cli.js.",
-    ].join("\n"))
+    const terminator = argv.indexOf("--")
+    if (terminator === -1) argv.push(...globalArgs)
+    else argv.splice(terminator, 0, ...globalArgs)
+
+    return await this.run<T>(candidate, argv)
   }
 
-  private spawn(candidate: TasksLaunchCandidate): SidecarProcess {
-    const child = spawn(candidate.command, candidate.args, {
-      stdio: ["pipe", "pipe", "pipe"],
-      ...(candidate.env ? { env: candidate.env } : {}),
-    }) as SidecarProcess
-    child.stdout.setEncoding("utf8")
-    child.stderr.setEncoding("utf8")
-    child.stdin.on("error", () => undefined)
-    child.stdout.on("data", (chunk: string) => this.handleStdout(chunk))
-    child.stderr.on("data", (chunk: string) => {
-      this.stderrTail = (this.stderrTail + chunk).slice(-MAX_STDERR_CHARS)
-    })
-    child.once("error", (error: Error) => this.handleExit(child, error.message))
-    child.once("exit", (code, signal) => this.handleExit(child, exitReason(candidate, code, signal)))
-    return child
-  }
-
-  private dispatch<T>(
-    child: SidecarProcess,
-    requestId: string,
-    command: string,
-    args: Record<string, unknown>,
-    timeoutMs: number,
-  ): Promise<T> {
-    // Tasks requires an idempotencyKey on every mutation. The adapter never
-    // replays a mutation whose outcome is unknown, so a unique key per attempt
-    // is enough to keep two intentional writes from collapsing into one.
-    const payload = JSON.stringify({
-      version: PROTOCOL_VERSION,
-      requestId,
-      command,
-      args,
-      actor: ACTOR,
-      idempotencyKey: `pi-${this.sessionKey}-${requestId}`,
-    })
-
+  private run<T>(candidate: TasksLaunchCandidate, argv: string[]): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      const child = spawn(candidate.command, [...candidate.args, ...argv], {
+        stdio: ["ignore", "pipe", "pipe"],
+        ...(candidate.env ? { env: candidate.env } : {}),
+      }) as CliProcess
+      let stdout = ""
+      let stderr = ""
+      let settled = false
       const timer = setTimeout(() => {
-        this.pending.delete(requestId)
-        reject(new Error(`${command} timed out after ${timeoutMs}ms`))
-      }, timeoutMs)
+        if (settled) return
+        settled = true
+        child.kill("SIGTERM")
+        reject(new Error(`tasks-cli command ${argv[0] ?? "unknown"} timed out after ${COMMAND_TIMEOUT_MS}ms`))
+      }, COMMAND_TIMEOUT_MS)
 
-      this.pending.set(requestId, {
-        child,
-        resolve: result => resolve(result as T),
-        reject,
-        timer,
+      const finish = (callback: () => void): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        callback()
+      }
+
+      child.stdout.setEncoding("utf8")
+      child.stderr.setEncoding("utf8")
+      child.stdout.on("data", (chunk: string) => {
+        stdout += chunk
       })
+      child.stderr.on("data", (chunk: string) => {
+        stderr += chunk
+      })
+      child.once("error", (error: Error) => {
+        finish(() => reject(new Error(`Failed to launch ${candidate.label}: ${error.message}`)))
+      })
+      child.once("close", (code, signal) => {
+        finish(() => {
+          let result: unknown
+          if (stdout.trim().length > 0) {
+            try {
+              result = parseJson(stdout, argv[0] ?? "unknown")
+            } catch (error) {
+              if (code === 0) {
+                reject(error)
+                return
+              }
+            }
+          }
 
-      child.stdin.write(`${payload}\n`, error => {
-        if (!error) return
-        const entry = this.pending.get(requestId)
-        if (!entry) return
-        this.pending.delete(requestId)
-        clearTimeout(entry.timer)
-        entry.reject(withDetails(`Failed to send ${command}`, error.message))
+          const cliError = errorFromResult(result)
+          if (cliError) {
+            reject(cliError)
+            return
+          }
+          if (code !== 0) {
+            const details = stderrDetails(stderr)
+            const reason = exitMessage(candidate, code, signal)
+            reject(new Error(details.length > 0 ? `${reason}: ${details}` : reason))
+            return
+          }
+          resolve(result as T)
+        })
       })
     })
-  }
-
-  private handleStdout(chunk: string): void {
-    this.stdoutBuffer += chunk
-
-    let newline = this.stdoutBuffer.indexOf("\n")
-    while (newline >= 0) {
-      const line = this.stdoutBuffer.slice(0, newline)
-      this.stdoutBuffer = this.stdoutBuffer.slice(newline + 1)
-      this.settleLine(line)
-      newline = this.stdoutBuffer.indexOf("\n")
-    }
-  }
-
-  private settleLine(line: string): void {
-    if (line.trim() === "") return
-
-    let envelope: ProtocolEnvelope
-    try {
-      envelope = JSON.parse(line) as ProtocolEnvelope
-    } catch {
-      return
-    }
-
-    const requestId = typeof envelope.requestId === "string" ? envelope.requestId : ""
-    const entry = this.pending.get(requestId)
-    if (!entry) return
-
-    this.pending.delete(requestId)
-    clearTimeout(entry.timer)
-
-    if (envelope.ok === true) entry.resolve(envelope.result ?? {})
-    else entry.reject(responseError(envelope))
-  }
-
-  private handleExit(child: SidecarProcess, reason = "Tasks backend stopped"): void {
-    const details = this.stderrTail
-    const wasCurrent = this.child === child
-
-    if (wasCurrent) {
-      this.child = null
-      this.stdoutBuffer = ""
-      this.stderrTail = ""
-    }
-    child.stdout.removeAllListeners("data")
-
-    for (const [requestId, entry] of this.pending) {
-      if (entry.child !== child) continue
-      this.pending.delete(requestId)
-      clearTimeout(entry.timer)
-      entry.reject(withDetails(reason, details))
-    }
-
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
-  }
-
-  private scheduleIdleExit(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer)
-    this.idleTimer = setTimeout(() => this.close(), IDLE_EXIT_MS)
-    this.idleTimer.unref?.()
   }
 }

@@ -11,7 +11,7 @@ const TASKS_APP_DATA_DIR = "com.soleone.tasks"
  * and rpm builds place it in `/usr/bin` beside the app. The app binary itself
  * is named `tasks` and opens a window, so it is never a candidate here.
  */
-const TASKS_COMMAND = "tasks-backend"
+const TASKS_COMMAND = "tasks-cli"
 interface CanonicalTaskFile {
   format?: unknown
   status?: unknown
@@ -85,15 +85,15 @@ function commandCandidate(
   env?: Record<string, string | undefined>,
 ): TasksLaunchCandidate {
   return isScriptFile(command)
-    ? { label, command: process.execPath, args: [command, "--stdio", "--database", databasePath], ...(env ? { env } : {}) }
-    : { label, command, args: ["--stdio", "--database", databasePath], ...(env ? { env } : {}) }
+    ? { label, command: process.execPath, args: [command, "--database", databasePath], ...(env ? { env } : {}) }
+    : { label, command, args: ["--database", databasePath], ...(env ? { env } : {}) }
 }
 
 /**
  * Ways to reach the Tasks command path: `PI_TASKS_TASKS_COMMAND` when set, for
- * development builds and AppImage extracts, otherwise the `tasks-backend`
- * command a Tasks install puts on `PATH`. Nothing is guessed about where a
- * Tasks checkout or app might live on this machine.
+ * development builds and AppImage extracts, otherwise the `tasks-cli` command
+ * a Tasks install puts on `PATH`. Nothing is guessed about where a Tasks
+ * checkout or app might live on this machine.
  */
 export function resolveLaunchCandidates(
   workspace: TasksWorkspace,

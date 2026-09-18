@@ -49,7 +49,7 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
 
 ### Supported backends:
 
-- [Tasks](https://github.com/Soleone/tasks) - Reads and writes a Tasks workspace through its JSON-lines command path, scoped to the `@category` that matches the project directory. Detection runs first, so a matching category claims the project.
+- [Tasks](https://github.com/Soleone/tasks) - Reads and writes a Tasks workspace through `tasks-cli`, scoped to the `@category` that matches the project directory. Detection runs first, so a matching category claims the project.
 - [sq](https://github.com/DerekStride/sq) - Uses the `sq` cli to manage tasks in a `.sift` directory via a `issues.jsonl` file. No initialization necessary.
 - `tq` - Uses the `tq` cli to manage tasks in a `.tq/tasks.jsonl` file. Automatically preferred when a `.tq` directory is detected.
 - [beads](https://github.com/steveyegge/beads) - Uses the `bd` cli to manage tasks into a `.beads` directory containing multiple files.
@@ -66,22 +66,22 @@ So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only th
 
 Because Tasks derives `@category` from the title, the adapter keeps the scope token there: created tasks get it appended, renamed tasks keep it, and a title that uses a different category is rejected instead of quietly moving the task out of the project.
 
-Tasks talks JSON lines over the sidecar's stdio (`--stdio --database <path>`) through one shared child process that is respawned on demand. Task ids are UUIDs, so the list shows an eight character prefix that the adapter resolves back to the full id; longer prefixes disambiguate.
+The adapter invokes `tasks-cli --json` once per operation. The CLI enters the same backend command implementation as the desktop app, so reads and writes stay in sync without pi-tasks touching SQLite directly. Task ids are UUIDs, so the list shows an eight character prefix that the adapter resolves back to the full id; longer prefixes disambiguate.
 
-The protocol backend is expected on `PATH` as `tasks-backend`, the sidecar Tasks uses for its JSON-lines command path. Tasks also ships a separate `tasks-cli` command for argv-oriented agent use; it is not interchangeable with `tasks-backend`, so this adapter intentionally does not probe it. Nothing is guessed about where Tasks is installed, and the app binary is never a candidate: it is named `tasks` and running it opens a window. When `tasks-backend` is not reachable, `PI_TASKS_TASKS_COMMAND` points at it explicitly.
+The CLI is expected on `PATH` as `tasks-cli`. Nothing is guessed about where Tasks is installed, and the app binary is never a candidate: it is named `tasks` and running it opens a window. When `tasks-cli` is not reachable, `PI_TASKS_TASKS_COMMAND` points at it explicitly.
 
 | Situation | Setup |
 | --- | --- |
-| Installed from `.deb` / `.rpm` | none, `/usr/bin/tasks-backend` is already on `PATH` |
+| Installed from `.deb` / `.rpm` | none, `/usr/bin/tasks-cli` is already on `PATH` |
 | Development build | symlink it under the packaged name (below) or set `PI_TASKS_TASKS_COMMAND` |
-| AppImage | extract it, then set `PI_TASKS_TASKS_COMMAND` to `squashfs-root/usr/bin/tasks-backend` |
-| Backend from source | `pnpm build:backend`, then `PI_TASKS_TASKS_COMMAND=<checkout>/dist/backend/cli.js`, which runs on the same Node as pi |
+| AppImage | extract it, then set `PI_TASKS_TASKS_COMMAND` to `squashfs-root/usr/bin/tasks-cli` |
+| CLI from source | `pnpm build:backend`, then `PI_TASKS_TASKS_COMMAND=<checkout>/dist/backend/tasks-cli.js`, which runs on the same Node as pi |
 
-A development build names the sidecar after its target triple, so adding `src-tauri/binaries` to `PATH` does not put `tasks-backend` on `PATH`. Give it the packaged name instead:
+A development build names the sidecar after its target triple, so adding `src-tauri/binaries` to `PATH` does not put `tasks-cli` on `PATH`. Give it the packaged name instead:
 
 ```bash
 host_tuple="$(rustc -vV | sed -n 's/^host: //p')"
-ln -s "$SRC/products/tasks/src-tauri/binaries/tasks-backend-$host_tuple" ~/.local/bin/tasks-backend
+ln -s "$SRC/products/tasks/src-tauri/binaries/tasks-cli-$host_tuple" ~/.local/bin/tasks-cli
 ```
 
 Tasks has no task types or due dates, so the type stays `task`; unsupported task types and due dates are rejected rather than silently discarded. Status and priority map directly:
@@ -136,7 +136,7 @@ For local UI testing, `scripts/seed-hierarchy-demo.sh` creates an idempotent sq 
 Tasks backend, all optional:
 
 - `PI_TASKS_TASKS_CATEGORY` - use this category instead of the one derived from the directory name. Setting it activates the backend even before a task uses the category.
-- `PI_TASKS_TASKS_COMMAND` - the JSON-lines backend command or path, for a development build, an extracted AppImage sidecar, or `cli.js`. Do not point it at the separate argv-oriented `tasks-cli`. Replaces the `PATH` lookup; a bare name still resolves through `PATH`.
+- `PI_TASKS_TASKS_COMMAND` - the `tasks-cli` command or path, for a development build, an extracted AppImage sidecar, or `tasks-cli.js`. Replaces the `PATH` lookup; a bare name still resolves through `PATH`.
 - `PI_TASKS_TASKS_DB` - path to `tasks.db`. Defaults to `TASKS_DATABASE_PATH`, then the platform data directory.
 - `PI_TASKS_TASKS_SYNC_ROOT` - canonical JSON root used for category detection. Defaults to `TASKS_SYNC_ROOT`, then `sync` beside the database.
 - `PI_TASKS_TASKS_DATA_DIR` - directory holding `tasks.db`, for a Tasks profile that does not live in the default data directory.

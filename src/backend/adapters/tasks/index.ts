@@ -18,7 +18,7 @@ import {
   resolveTasksWorkspace,
   type TasksWorkspace,
 } from "./discovery.ts"
-import { TasksProtocolClient } from "./client.ts"
+import { TasksCliClient } from "./client.ts"
 import {
   backendStatusesForScope,
   isFullTaskId,
@@ -89,16 +89,16 @@ function sessionContext(category: string | undefined): TaskSessionContextMessage
   return {
     customType: "pi-tasks-backend-context-tasks-v1",
     content: [
-      "The pi-tasks extension is using the `tasks` backend, which talks to the Tasks app",
-      "workspace over its JSON-lines command path, so edits are shared with the desktop app immediately.",
+      "The pi-tasks extension is using the `tasks` backend through the Tasks CLI, which",
+      "uses the same Tasks command path as the desktop app, so edits are shared immediately.",
       category
         ? `This project is scoped to the \`@${category}\` category matched from the directory name;`
           + " pi-tasks keeps that token in the task title so tasks stay in scope."
         : "This project is not scoped to a category, so every task in the workspace is listed.",
       "Tasks has no task types or due dates; use `#tags` in the description for finer classification.",
-      "Outside the Tasks UI, commands go to the backend as JSON lines (`--stdio --database <path>`):",
-      "runtime.probe, task.list, task.get, task.create, task.update, task.start, task.pause,",
-      "task.complete, task.reopen, task.move, task.dependency.add, task.dependency.remove.",
+      "Outside the Tasks UI, pi-tasks invokes `tasks-cli --json` for list/show/add/update,",
+      "status, hierarchy, and dependency operations. Versioned mutations pass the task version",
+      "explicitly; the CLI supplies idempotency keys and actor metadata.",
       "Versioned mutations need the current `expectedVersion`; creates use idempotency and task ids may be given as unambiguous prefixes.",
     ].join(" "),
   }
@@ -106,8 +106,8 @@ function sessionContext(category: string | undefined): TaskSessionContextMessage
 
 /**
  * Adapter for the Tasks product command path. Reads and writes go through the
- * same typed commands as the desktop app, so nothing here needs the SQLite
- * cache or the canonical files beyond cheap discovery.
+ * Tasks CLI, which enters the same command implementation as the desktop app;
+ * nothing here needs the SQLite cache or canonical files beyond cheap discovery.
  */
 export function createTasksAdapter(options: TasksAdapterOptions): TaskAdapter {
   const { request, category } = options
@@ -384,7 +384,7 @@ export const tasksAdapterInitializer: TaskAdapterInitializer = {
   isApplicable,
   initialize: () => {
     const workspace = resolveTasksWorkspace()
-    const client = new TasksProtocolClient(resolveLaunchCandidates(workspace))
+    const client = new TasksCliClient(resolveLaunchCandidates(workspace))
     return createTasksAdapter({
       category: effectiveCategory(workspace),
       request: <T>(command: string, args: Record<string, unknown> = {}) => client.request<T>(command, args),

@@ -87,24 +87,24 @@ test("detection tolerates a missing or unreadable workspace", () => {
 
 test("the backend command is expected on PATH unless it is configured", () => {
   const workspace = { databasePath: "/data/tasks.db", syncRoot: "/data/sync" }
-  const stdioArgs = ["--stdio", "--database", "/data/tasks.db"]
+  const cliArgs = ["--database", "/data/tasks.db"]
 
   assert.deepEqual(resolveLaunchCandidates(workspace, {}), [
-    { label: "tasks-backend on PATH", command: "tasks-backend", args: stdioArgs },
+    { label: "tasks-cli on PATH", command: "tasks-cli", args: cliArgs },
   ])
 
-  const [absolute] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "/opt/tasks/tasks-backend" })
-  assert.deepEqual(absolute, { label: "PI_TASKS_TASKS_COMMAND", command: "/opt/tasks/tasks-backend", args: stdioArgs })
+  const [absolute] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "/opt/tasks/tasks-cli" })
+  assert.deepEqual(absolute, { label: "PI_TASKS_TASKS_COMMAND", command: "/opt/tasks/tasks-cli", args: cliArgs })
 
-  const [bareName] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "tasks-backend" })
-  assert.equal(bareName!.command, "tasks-backend")
+  const [bareName] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "tasks-cli" })
+  assert.equal(bareName!.command, "tasks-cli")
 
-  const [fromHome] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "~/bin/tasks-backend" })
-  assert.equal(fromHome!.command, join(homedir(), "bin", "tasks-backend"))
+  const [fromHome] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "~/bin/tasks-cli" })
+  assert.equal(fromHome!.command, join(homedir(), "bin", "tasks-cli"))
 
-  const [script] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "/opt/tasks/dist/backend/cli.js" })
+  const [script] = resolveLaunchCandidates(workspace, { PI_TASKS_TASKS_COMMAND: "/opt/tasks/dist/backend/tasks-cli.js" })
   assert.equal(script!.command, process.execPath)
-  assert.deepEqual(script!.args, ["/opt/tasks/dist/backend/cli.js", "--stdio", "--database", "/data/tasks.db"])
+  assert.deepEqual(script!.args, ["/opt/tasks/dist/backend/tasks-cli.js", "--database", "/data/tasks.db"])
 
   const [customSyncRoot] = resolveLaunchCandidates(workspace, {
     PI_TASKS_TASKS_SYNC_ROOT: "/shared/tasks",
