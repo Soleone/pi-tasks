@@ -49,7 +49,7 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
 
 ### Supported backends:
 
-- [Tasks](https://github.com/Soleone/tasks) - Reads and writes a Tasks workspace through `tasks-cli`, scoped to the `@category` that matches the project directory. Detection runs first, so a matching category claims the project.
+- [Tasks](https://github.com/Soleone/tasks) - Reads and writes a Tasks workspace through `tasks-cli`, scoped to the `@category` that matches the project name. Detection runs first, so a matching category claims the project.
 - [sq](https://github.com/DerekStride/sq) - Uses the `sq` cli to manage tasks in a `.sift` directory via a `issues.jsonl` file. No initialization necessary.
 - `tq` - Uses the `tq` cli to manage tasks in a `.tq/tasks.jsonl` file. Automatically preferred when a `.tq` directory is detected.
 - [beads](https://github.com/steveyegge/beads) - Uses the `bd` cli to manage tasks into a `.beads` directory containing multiple files.
@@ -60,9 +60,9 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
 The `tasks` backend talks to the same command path as the Tasks desktop app, so the list, the app, and any other agent stay in sync without a shared file format to negotiate. Detection needs two things:
 
 1. The Tasks workspace exists (`com.soleone.tasks/tasks.db` in the platform data directory, or wherever `TASKS_DATABASE_PATH` points).
-2. The current directory name matches a `@category` that at least one non-canceled task uses.
+2. The project name matches a `@category` that at least one non-canceled task uses.
 
-So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only those tasks are listed. The directory name is lowercased and anything outside letters, numbers, hyphens and underscores becomes a hyphen, so `My.App` reads as `@my-app`. If no category matches, the backend stays out of the way and the next adapter is detected instead.
+So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only those tasks are listed. For Git projects, pi-tasks uses the main repository directory, so linked worktrees share the same category; other projects use the current directory. The project name is lowercased and anything outside letters, numbers, hyphens and underscores becomes a hyphen, so `My.App` reads as `@my-app`. If no category matches, the backend stays out of the way and the next adapter is detected instead.
 
 Because Tasks derives `@category` from the title, the adapter keeps the scope token there: created tasks get it appended, renamed tasks keep it, and a title that uses a different category is rejected instead of quietly moving the task out of the project.
 
@@ -135,7 +135,7 @@ For local UI testing, `scripts/seed-hierarchy-demo.sh` creates an idempotent sq 
 
 Tasks backend, all optional:
 
-- `PI_TASKS_TASKS_CATEGORY` - use this category instead of the one derived from the directory name. Setting it activates the backend even before a task uses the category.
+- `PI_TASKS_TASKS_CATEGORY` - use this category instead of the one derived from the project name. Setting it activates the backend even before a task uses the category.
 - `PI_TASKS_TASKS_COMMAND` - the `tasks-cli` command or path, for a development build, an extracted AppImage sidecar, or `tasks-cli.js`. Replaces the `PATH` lookup; a bare name still resolves through `PATH`.
 - `PI_TASKS_TASKS_DB` - path to `tasks.db`. Defaults to `TASKS_DATABASE_PATH`, then the platform data directory.
 - `PI_TASKS_TASKS_SYNC_ROOT` - canonical JSON root used for category detection. Defaults to `TASKS_SYNC_ROOT`, then `sync` beside the database.

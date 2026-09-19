@@ -7,7 +7,7 @@ import todoMdAdapter from "./adapters/todo-md.ts"
 import tqAdapter from "./adapters/tq.ts"
 
 // Detection order matters: the first applicable adapter wins. `tasks` leads
-// because a category that matches the project directory is an explicit choice,
+// because a category that matches the project name is an explicit choice,
 // then the file-based `tq` marker, then beads and sq.
 const ADAPTER_INITIALIZERS: TaskAdapterInitializer[] = [
   tasksAdapter,

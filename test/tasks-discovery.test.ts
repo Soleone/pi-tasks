@@ -1,10 +1,12 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   categoryCandidatesForDirectory,
+  categoryCandidatesForProject,
   detectCategorySlug,
   directoryCategoryCandidates,
   resolveLaunchCandidates,
@@ -45,6 +47,44 @@ test("directory names become the category slugs they could mean", () => {
 test("an explicit category override replaces the directory name", () => {
   assert.deepEqual(categoryCandidatesForDirectory("pi-tasks", { PI_TASKS_TASKS_CATEGORY: "Home" }), ["home"])
   assert.deepEqual(categoryCandidatesForDirectory("pi-tasks", {}), ["pi-tasks"])
+})
+
+test("Git worktrees use the main checkout directory for category detection", () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-tasks-git-"))
+  const main = join(root, "pi-tasks")
+  const worktree = join(root, "pi-tasks-feature")
+  mkdirSync(main, { recursive: true })
+
+  try {
+    execFileSync("git", ["init", "--quiet", "-b", "main"], { cwd: main, stdio: "ignore" })
+    writeFileSync(join(main, "README.md"), "fixture")
+    execFileSync("git", ["add", "README.md"], { cwd: main, stdio: "ignore" })
+    execFileSync(
+      "git",
+      ["-c", "user.name=pi-tasks-test", "-c", "user.email=pi-tasks@example.invalid", "commit", "--quiet", "-m", "initial"],
+      { cwd: main, stdio: "ignore" },
+    )
+    execFileSync("git", ["worktree", "add", "--quiet", "-b", "feature", worktree], { cwd: main, stdio: "ignore" })
+    mkdirSync(join(worktree, "src"), { recursive: true })
+
+    assert.deepEqual(categoryCandidatesForProject(main), ["pi-tasks"])
+    assert.deepEqual(categoryCandidatesForProject(worktree), ["pi-tasks"])
+    assert.deepEqual(categoryCandidatesForProject(join(worktree, "src")), ["pi-tasks"])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("non-Git projects fall back to the directory name", () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-tasks-plain-"))
+  const project = join(root, "Plain.Project")
+  mkdirSync(project)
+
+  try {
+    assert.deepEqual(categoryCandidatesForProject(project), ["plain-project"])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test("detection matches the directory name against task categories in titles", () => {

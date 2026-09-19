@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs"
-import { basename } from "node:path"
 import type {
   CreateTaskInput,
   TaskAdapter,
@@ -12,7 +11,7 @@ import type { Task, TaskStatus } from "../../../models/task.ts"
 import { PRIORITIES, PRIORITY_HOTKEYS } from "../shared/constants.ts"
 import { sortActiveTasks, sortClosedTasks } from "../shared/sorting.ts"
 import {
-  categoryCandidatesForDirectory,
+  categoryCandidatesForProject,
   detectCategorySlug,
   resolveLaunchCandidates,
   resolveTasksWorkspace,
@@ -92,7 +91,7 @@ function sessionContext(category: string | undefined): TaskSessionContextMessage
       "The pi-tasks extension is using the `tasks` backend through the Tasks CLI, which",
       "uses the same Tasks command path as the desktop app, so edits are shared immediately.",
       category
-        ? `This project is scoped to the \`@${category}\` category matched from the directory name;`
+        ? `This project is scoped to the \`@${category}\` category matched from the project name;`
           + " pi-tasks keeps that token in the task title so tasks stay in scope."
         : "This project is not scoped to a category, so every task in the workspace is listed.",
       "Tasks has no task types or due dates; use `#tags` in the description for finer classification.",
@@ -349,7 +348,7 @@ let detection: Detection | null = null
 
 function detectCategory(workspace: TasksWorkspace): string | undefined {
   const directory = process.cwd()
-  const candidates = categoryCandidatesForDirectory(basename(directory))
+  const candidates = categoryCandidatesForProject(directory)
   const candidatesKey = candidates.join("\u0000")
   if (
     detection?.directory === directory

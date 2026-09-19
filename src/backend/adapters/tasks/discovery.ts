@@ -1,6 +1,7 @@
+import { execFileSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { dirname, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { categorySlugsIn } from "./mapping.ts"
 
 /** Data directory name used by the Tasks desktop app (`com.soleone.tasks`). */
@@ -132,6 +133,50 @@ export function categoryCandidatesForDirectory(
 ): string[] {
   const override = environment.PI_TASKS_TASKS_CATEGORY?.trim().toLowerCase()
   return override ? [override] : directoryCategoryCandidates(directoryName)
+}
+
+/**
+ * Returns the stable project directory for a path inside a Git checkout.
+ * Linked worktrees have their own `.git` file and top-level directory, but
+ * share the main checkout's common Git directory. Its parent is therefore
+ * the identity shared by all worktrees.
+ */
+function gitProjectDirectory(directory: string): string | undefined {
+  try {
+    const output = String(execFileSync(
+      "git",
+      ["-C", directory, "rev-parse", "--show-toplevel", "--git-common-dir"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ))
+    const [worktreeRoot, commonDirectory] = output.trim().split(/\r?\n/).map(value => value.trim())
+    if (!worktreeRoot) return undefined
+
+    const resolvedCommonDirectory = commonDirectory
+      ? (isAbsolute(commonDirectory) ? commonDirectory : resolve(worktreeRoot, commonDirectory))
+      : undefined
+
+    return resolvedCommonDirectory && basename(resolvedCommonDirectory) === ".git"
+      ? dirname(resolvedCommonDirectory)
+      : resolve(worktreeRoot)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Computes category candidates from the project rather than blindly using the
+ * current directory. Git worktrees therefore share the category of their main
+ * checkout, while non-Git projects retain the directory-name fallback.
+ */
+export function categoryCandidatesForProject(
+  directory: string,
+  environment: Environment = process.env,
+): string[] {
+  const override = environment.PI_TASKS_TASKS_CATEGORY?.trim().toLowerCase()
+  if (override) return [override]
+
+  const projectDirectory = gitProjectDirectory(directory) ?? directory
+  return directoryCategoryCandidates(basename(projectDirectory))
 }
 
 /**
