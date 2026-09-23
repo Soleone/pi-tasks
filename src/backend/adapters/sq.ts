@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import type { TaskSessionContextMessage } from "../api.ts"
+import type { TaskAdapterDetection, TaskSessionContextMessage } from "../api.ts"
 import { createSqCompatibleAdapterInitializer } from "./shared/sq-compatible.ts"
 
 const SESSION_CONTEXT_MESSAGE: TaskSessionContextMessage = {
@@ -14,14 +14,14 @@ const SESSION_CONTEXT_MESSAGE: TaskSessionContextMessage = {
   ].join(" "),
 }
 
-function isApplicable(): boolean {
-  const result = spawnSync("sq", ["--help"], { stdio: "ignore" })
-  return !result.error
+function detect(): TaskAdapterDetection {
+  const result = spawnSync("sq", ["--help"], { stdio: "ignore", timeout: 1_000 })
+  return !result.error && result.status === 0 ? "default" : undefined
 }
 
 export default createSqCompatibleAdapterInitializer({
   id: "sq",
   command: "sq",
   sessionContextMessage: SESSION_CONTEXT_MESSAGE,
-  isApplicable,
+  detect,
 })

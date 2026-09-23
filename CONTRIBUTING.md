@@ -67,7 +67,7 @@ To add a backend adapter, create one file in `src/backend/adapters/` with a **de
 Required shape:
 
 - `id: string`
-- `isApplicable(): boolean` (detect if adapter should be used in current workspace)
+- `detect(): TaskAdapterDetection` (`project` match, general `default`, secondary `fallback`, `final` fallback, or `undefined`)
 - `initialize(pi)` returning a `TaskAdapter` with:
   - `statusMap` (internal camelCase status -> backend status)
   - `taskTypes` (toggle order, first is default)
@@ -77,11 +77,11 @@ Required shape:
 
 Resolution behavior:
 
-1. `PI_TASKS_BACKEND` selects adapter by `id`
-2. otherwise the first adapter with `isApplicable() === true` is used, in the order listed in `resolver.ts`
-3. if none apply, first loaded adapter is used as fallback
+1. `PI_TASKS_BACKEND` selects an adapter by `id`
+2. otherwise every adapter reports a detection tier, and the resolver selects by precedence: `project`, `default`, `fallback`, then `final`
+3. registry order in `resolver.ts` breaks ties within a tier; `todo-md` reports `final`
 
-`isApplicable()` and `initialize()` run synchronously while the extension loads, so detection cannot await. The `tasks` adapter therefore reads the canonical JSON workspace directly to find its category and defers launching the backend until the first request.
+`detect()` and `initialize()` run synchronously while the extension loads, so detection cannot await. The `tasks` adapter therefore reads the canonical JSON workspace directly to find its category and defers launching the backend until the first request.
 
 Keep backend-specific field mapping inside adapter files only (e.g. beads `issue_type`, `in_progress`, `created_at`, `due_at`), and keep app-level types in task-oriented camelCase (`taskType`, `inProgress`, `createdAt`, `dueAt`).
 

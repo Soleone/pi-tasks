@@ -6,6 +6,7 @@ import { sortActiveTasks, sortClosedTasks } from "./sorting.ts"
 import type {
   CreateTaskInput,
   TaskAdapter,
+  TaskAdapterDetection,
   TaskAdapterInitializer,
   TaskListScope,
   TaskSessionContextMessage,
@@ -25,7 +26,7 @@ interface SqCompatibleAdapterOptions {
   id: string
   command: string
   sessionContextMessage: TaskSessionContextMessage
-  isApplicable(): boolean
+  detect(): TaskAdapterDetection
 }
 
 interface SqCompatibleItem {
@@ -290,7 +291,7 @@ function initialize(pi: ExtensionAPI, options: SqCompatibleAdapterOptions): Task
 export function createSqCompatibleAdapterInitializer(options: SqCompatibleAdapterOptions): TaskAdapterInitializer {
   return {
     id: options.id,
-    isApplicable: options.isApplicable,
+    detect: options.detect,
     initialize: (pi) => initialize(pi, options),
   }
 }

@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import type { Task, TaskStatus } from "../../models/task.ts"
 import { resolveRoot, wouldCreateParentCycle } from "../../models/task-hierarchy.ts"
-import type { CreateTaskInput, TaskAdapter, TaskAdapterInitializer, TaskListScope, TaskStatusMap, TaskUpdate } from "../api.ts"
+import type { CreateTaskInput, TaskAdapter, TaskAdapterDetection, TaskAdapterInitializer, TaskListScope, TaskStatusMap, TaskUpdate } from "../api.ts"
 
 const DEFAULT_TODO_FILES = ["TODO.md", "todo.md"] as const
 const TODO_FILE_ENV = "PI_TASKS_TODO_PATH"
@@ -380,8 +380,8 @@ async function writeDocument(filePath: string, document: TodoDocument): Promise<
   await writeFile(filePath, renderTodoDocument(document), "utf8")
 }
 
-function isApplicable(): boolean {
-  return existsSync(resolveTodoPath())
+function detect(): TaskAdapterDetection {
+  return "final"
 }
 
 function initialize(_pi: ExtensionAPI): TaskAdapter {
@@ -487,6 +487,6 @@ function initialize(_pi: ExtensionAPI): TaskAdapter {
 
 export default {
   id: "todo-md",
-  isApplicable,
+  detect,
   initialize,
 } satisfies TaskAdapterInitializer

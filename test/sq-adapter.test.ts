@@ -16,7 +16,7 @@ function createAdapter(items: unknown[]) {
     id: "sq-test",
     command: "sq",
     sessionContextMessage: { customType: "test", content: "test" },
-    isApplicable: () => true,
+    detect: () => "default",
   })
   return { adapter: initializer.initialize(pi as never), calls }
 }

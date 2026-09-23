@@ -2,6 +2,7 @@ import { existsSync } from "node:fs"
 import type {
   CreateTaskInput,
   TaskAdapter,
+  TaskAdapterDetection,
   TaskAdapterInitializer,
   TaskListScope,
   TaskSessionContextMessage,
@@ -13,6 +14,7 @@ import { sortActiveTasks, sortClosedTasks } from "../shared/sorting.ts"
 import {
   categoryCandidatesForProject,
   detectCategorySlug,
+  isTasksCliAvailable,
   resolveLaunchCandidates,
   resolveTasksWorkspace,
   type TasksWorkspace,
@@ -368,19 +370,24 @@ function configuredCategory(): string | undefined {
 }
 
 function effectiveCategory(workspace: TasksWorkspace): string | undefined {
-  return configuredCategory() ?? detectCategory(workspace)
+  return configuredCategory()
+    ?? detectCategory(workspace)
+    ?? categoryCandidatesForProject(process.cwd())[0]
 }
 
-function isApplicable(): boolean {
+function detect(): TaskAdapterDetection {
   const workspace = resolveTasksWorkspace()
-  if (!existsSync(workspace.databasePath)) return false
+  if (!existsSync(workspace.databasePath) || !isTasksCliAvailable(workspace)) return undefined
 
-  return configuredCategory() !== undefined || detectCategory(workspace) !== undefined
+  if (configuredCategory() !== undefined || detectCategory(workspace) !== undefined) {
+    return "project"
+  }
+  return categoryCandidatesForProject(process.cwd()).length > 0 ? "fallback" : undefined
 }
 
 export const tasksAdapterInitializer: TaskAdapterInitializer = {
   id: "tasks",
-  isApplicable,
+  detect,
   initialize: () => {
     const workspace = resolveTasksWorkspace()
     const client = new TasksCliClient(resolveLaunchCandidates(workspace))

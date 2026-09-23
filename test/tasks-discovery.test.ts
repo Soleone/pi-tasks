@@ -9,6 +9,7 @@ import {
   categoryCandidatesForProject,
   detectCategorySlug,
   directoryCategoryCandidates,
+  isTasksCliAvailable,
   resolveLaunchCandidates,
   resolveTasksWorkspace,
 } from "../src/backend/adapters/tasks/discovery.ts"
@@ -152,6 +153,23 @@ test("the backend command is expected on PATH unless it is configured", () => {
   })
   assert.equal(customSyncRoot!.env?.TASKS_SYNC_ROOT, "/data/sync")
   assert.equal(customSyncRoot!.env?.PI_TASKS_TASKS_SYNC_ROOT, "/shared/tasks")
+})
+
+test("fallback availability probes the configured CLI launch candidate", () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-tasks-cli-detection-"))
+  const command = join(root, "tasks-cli.js")
+  const workspace = { databasePath: join(root, "tasks.db"), syncRoot: join(root, "sync") }
+  writeFileSync(command, "process.exit(0)\n")
+
+  try {
+    assert.equal(isTasksCliAvailable(workspace, { PI_TASKS_TASKS_COMMAND: command }), true)
+    assert.equal(
+      isTasksCliAvailable(workspace, { PI_TASKS_TASKS_COMMAND: join(root, "missing.js") }),
+      false,
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test("workspace paths follow pi-tasks settings before Tasks settings", () => {

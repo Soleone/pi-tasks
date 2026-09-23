@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { dirname, resolve } from "node:path"
-import type { TaskSessionContextMessage } from "../api.ts"
+import type { TaskAdapterDetection, TaskSessionContextMessage } from "../api.ts"
 import { createSqCompatibleAdapterInitializer } from "./shared/sq-compatible.ts"
 
 const SESSION_CONTEXT_MESSAGE: TaskSessionContextMessage = {
@@ -28,19 +28,16 @@ function hasTqDirectory(startDirectory = process.cwd()): boolean {
   }
 }
 
-function isApplicable(): boolean {
-  if (!hasTqDirectory()) return false
+function detect(): TaskAdapterDetection {
+  if (!hasTqDirectory()) return undefined
 
-  const result = spawnSync("tq", ["--help"], { stdio: "ignore" })
-  if (result.error) {
-    throw new Error("Detected a .tq directory, but the `tq` CLI is not available on PATH")
-  }
-  return true
+  const result = spawnSync("tq", ["--help"], { stdio: "ignore", timeout: 1_000 })
+  return !result.error && result.status === 0 ? "project" : undefined
 }
 
 export default createSqCompatibleAdapterInitializer({
   id: "tq",
   command: "tq",
   sessionContextMessage: SESSION_CONTEXT_MESSAGE,
-  isApplicable,
+  detect,
 })

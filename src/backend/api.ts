@@ -49,8 +49,12 @@ export interface TaskAdapter {
   create(input: CreateTaskInput): Promise<Task>
 }
 
+/** Selection tier reported by each backend's environment/project detector. */
+export type TaskAdapterDetection = "project" | "default" | "fallback" | "final" | undefined
+
 export interface TaskAdapterInitializer {
   readonly id: string
-  isApplicable(): boolean
+  /** Reports how this backend applies to the current project and environment. */
+  detect(): TaskAdapterDetection
   initialize(pi: ExtensionAPI): TaskAdapter
 }

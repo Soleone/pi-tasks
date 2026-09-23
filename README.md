@@ -43,7 +43,7 @@ Relationship pickers exclude the current task. Parent cycles, self-links, and de
 
 ## Task backends
 
-By default, the extension auto-detects the first applicable backend. If none are applicable, it falls back to `todo-md`. Projects with a `.tq` directory use the `tq` backend for that session; otherwise `sq` remains the recommended default.
+By default, project-specific matches take precedence, followed by the installed `sq` default, then Tasks as a category-scoped fallback when its workspace and `tasks-cli` are available. If none are available, the extension uses `todo-md`. Projects with a `.tq` directory use the `tq` backend for that session.
 
 For most setups, `sq` is recommended as the default backend. It is lightweight, works well in brand new directories, and can create its local data on demand. Install it from the [`sq` installation guide](https://github.com/DerekStride/sq?tab=readme-ov-file#installation).
 
@@ -57,12 +57,12 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
 
 ### Tasks workspace backend
 
-The `tasks` backend talks to the same command path as the Tasks desktop app, so the list, the app, and any other agent stay in sync without a shared file format to negotiate. Detection needs two things:
+The `tasks` backend talks to the same command path as the Tasks desktop app, so the list, the app, and any other agent stay in sync without a shared file format to negotiate. Automatic detection needs two things:
 
 1. The Tasks workspace exists (`com.soleone.tasks/tasks.db` in the platform data directory, or wherever `TASKS_DATABASE_PATH` points).
 2. The project name matches a `@category` that at least one non-canceled task uses.
 
-So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only those tasks are listed. For Git projects, pi-tasks uses the main repository directory, so linked worktrees share the same category; other projects use the current directory. The project name is lowercased and anything outside letters, numbers, hyphens and underscores becomes a hyphen, so `My.App` reads as `@my-app`. If no category matches, the backend stays out of the way and the next adapter is detected instead.
+So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only those tasks are listed. For Git projects, pi-tasks uses the main repository directory, so linked worktrees share the same category; other projects use the current directory. The project name is lowercased and anything outside letters, numbers, hyphens and underscores becomes a hyphen, so `My.App` reads as `@my-app`. If no category matches, Tasks stays out of the way during normal detection. If no other project backend applies, it can serve as the fallback using the derived project category, so unrelated workspace tasks are not shown.
 
 Because Tasks derives `@category` from the title, the adapter keeps the scope token there: created tasks get it appended, renamed tasks keep it, and a title that uses a different category is rejected instead of quietly moving the task out of the project.
 

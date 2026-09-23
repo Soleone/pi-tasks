@@ -9,6 +9,7 @@ import { sortActiveTasks, sortClosedTasks } from "./shared/sorting.ts"
 import type {
   CreateTaskInput,
   TaskAdapter,
+  TaskAdapterDetection,
   TaskAdapterInitializer,
   TaskListScope,
   TaskSessionContextMessage,
@@ -181,14 +182,15 @@ function fromTaskUpdateToBeadsArgs(update: TaskUpdate): string[] {
   return args
 }
 
-function isApplicable(): boolean {
-  if (!existsSync(resolve(process.cwd(), ".beads"))) return false
+function detect(): TaskAdapterDetection {
+  if (!existsSync(resolve(process.cwd(), ".beads"))) return undefined
 
   const result = spawnSync("bd", ["--version"], {
     stdio: "ignore",
+    timeout: 1_000,
   })
 
-  return !result.error
+  return !result.error && result.status === 0 ? "project" : undefined
 }
 
 function initialize(pi: ExtensionAPI): TaskAdapter {
@@ -299,6 +301,6 @@ function initialize(pi: ExtensionAPI): TaskAdapter {
 
 export default {
   id: "beads",
-  isApplicable,
+  detect,
   initialize,
 } satisfies TaskAdapterInitializer

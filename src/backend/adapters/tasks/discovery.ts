@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
@@ -110,6 +110,22 @@ export function resolveLaunchCandidates(
   }
 
   return [commandCandidate(TASKS_COMMAND, workspace.databasePath, `${TASKS_COMMAND} on PATH`, childEnvironment)]
+}
+
+/** Checks the configured command or tasks-cli on PATH without searching the filesystem. */
+export function isTasksCliAvailable(
+  workspace: TasksWorkspace,
+  environment: Environment = process.env,
+): boolean {
+  const candidate = resolveLaunchCandidates(workspace, environment)[0]
+  if (!candidate) return false
+
+  const result = spawnSync(candidate.command, [...candidate.args, "--help"], {
+    stdio: "ignore",
+    timeout: 1_000,
+    env: candidate.env ?? environment,
+  })
+  return !result.error && result.status === 0
 }
 
 /**
