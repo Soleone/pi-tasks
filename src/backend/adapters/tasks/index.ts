@@ -96,7 +96,7 @@ function sessionContext(category: string | undefined): TaskSessionContextMessage
         ? `This project is scoped to the \`@${category}\` category matched from the project name;`
           + " pi-tasks keeps that token in the task title so tasks stay in scope."
         : "This project is not scoped to a category, so every task in the workspace is listed.",
-      "Tasks has no task types or due dates; use `#tags` in the description for finer classification.",
+      "Tasks has no task types or due dates. Only use `#tags` in the description for finer classification if the user explicitly asks for it; by default, especially do not introduce new tags.",
       "Outside the Tasks UI, pi-tasks invokes `tasks-cli --json` for list/show/add/update,",
       "status, hierarchy, and dependency operations. Versioned mutations pass the task version",
       "explicitly; the CLI supplies idempotency keys and actor metadata.",
