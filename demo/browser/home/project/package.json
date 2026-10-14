@@ -1,0 +1,6 @@
+{
+  "name": "forecast",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "forecast": "src/cli.js" }
+}

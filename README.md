@@ -1,8 +1,10 @@
 # @soleone/pi-tasks
 
-Task management extension for the [pi coding agent](https://github.com/badlogic/pi-mono), designed for pluggable task backends.
+Your project's task list inside the [pi coding agent](https://pi.dev): browse it, edit it, and hand a task to the agent. It works over the tracker the project already uses.
 
-<img width="2373" height="1305" alt="image" src="https://github.com/user-attachments/assets/af210b63-f993-447d-9668-3308874d493c" />
+**[Try it in your browser](https://pi-tasks.soleone.xyz)**: real pi with the extension, on a scripted model, so no key and nothing leaves the page.
+
+![The task list opened in pi, grouped by parent, and one task handed to the agent, which finishes it and checks it off](demo/media/demo.webp)
 
 ## Quick start
 
@@ -30,7 +32,7 @@ Task management extension for the [pi coding agent](https://github.com/badlogic/
 - `c` to create a root task
 - `Delete` to close the selected task
 
-Grouped mode shows root tasks first and reveals indented descendants on expansion. Press `x` to show archived (closed) tasks instead of active ones; `x` again returns to the active list. The archive is sorted most recently closed first (beads `closed_at`, or `updated_at` for sq/tq; TODO.md has no timestamps, so it keeps file order). Closing or reopening a task removes it from the current view since it no longer belongs to that scope. Searching in grouped mode automatically includes the ancestor path to matching descendants. Blocked rows include unresolved blocker refs, and the preview shows blocker titles and whether each blocker is open, closed, or missing. The blocked marker is derived from blocker readiness without changing the backend lifecycle status.
+Grouped mode shows root tasks first and reveals indented children on expansion; a search there keeps the path to each match. `x` switches to closed tasks, most recently closed first (TODO.md keeps file order), and back. Blocked rows list their open blockers, and the preview shows whether each blocker is open, closed or missing.
 
 ### Edit view
 
@@ -66,9 +68,9 @@ So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only th
 
 Because Tasks derives `@category` from the title, the adapter keeps the scope token there: created tasks get it appended, renamed tasks keep it, and a title that uses a different category is rejected instead of quietly moving the task out of the project.
 
-The adapter invokes `tasks-cli --json` once per operation. The CLI enters the same backend command implementation as the desktop app, so reads and writes stay in sync without pi-tasks touching SQLite directly. Task ids are UUIDs, so the list shows an eight character prefix that the adapter resolves back to the full id; longer prefixes disambiguate.
+The adapter runs `tasks-cli --json` once per operation and never touches SQLite itself. Task ids are UUIDs, so the list shows an eight-character prefix that the adapter resolves back to the full id.
 
-The CLI is expected on `PATH` as `tasks-cli`. Nothing is guessed about where Tasks is installed, and the app binary is never a candidate: it is named `tasks` and running it opens a window. When `tasks-cli` is not reachable, `PI_TASKS_TASKS_COMMAND` points at it explicitly.
+The CLI is expected on `PATH` as `tasks-cli` (never the `tasks` app binary, which opens a window). Otherwise `PI_TASKS_TASKS_COMMAND` points at it.
 
 | Situation | Setup |
 | --- | --- |

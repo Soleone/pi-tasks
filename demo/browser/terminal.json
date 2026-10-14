@@ -1,0 +1,45 @@
+{
+  "project": "../..",
+  "mount": {
+    ".": {
+      "from": "./home"
+    },
+    ".pi-app": {
+      "from": "./.build/pi-app"
+    },
+    ".pi/agent/extensions/pi-tasks": {
+      "from": "../..",
+      "include": [
+        "index.ts",
+        "src",
+        "package.json"
+      ]
+    }
+  },
+  "env": {
+    "PATH": "~/bin:/usr/local/bin:/usr/bin:/bin",
+    "PI_OFFLINE": "1",
+    "PI_TASKS_BACKEND": "todo-md"
+  },
+  "setup": [
+    "chmod +x bin/pi bin/git bin/fd bin/rg",
+    "node .demo/setup.js",
+    "npm install --no-audit --no-fund"
+  ],
+  "start": "cd project && pi",
+  "onTheme": "node .demo/pi-theme.js",
+  "welcome": [
+    "\u001b[1mpi-tasks\u001b[0m puts your project's task list inside pi: browse it, edit it, and hand a task to the agent.",
+    "This is real pi with the extension. The model is scripted, so it knows a few tasks and needs no key.",
+    "pi opens by itself in a small sample project whose tasks live in TODO.md. Press /tasks above, then:",
+    "",
+    "  w / s      move up and down          d       details",
+    "  Enter      hand the task to pi       x       closed tasks",
+    "  Esc        back                      g       grouped or flat",
+    "",
+    "Try Add a --json flag or Add New York. Change the theme at the top right and pi follows it."
+  ],
+  "hints": [
+    "/tasks"
+  ]
+}

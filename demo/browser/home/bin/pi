@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+// pi, bundled for the browser sandbox by demo/browser/build.mjs.
+import("../.pi-app/dist/cli.js");

@@ -37,14 +37,21 @@
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "release": "release-it",
-    "release:dry": "release-it --dry-run"
+    "release:dry": "release-it --dry-run",
+    "demo:build": "node demo/browser/build.mjs && showcase terminal demo/browser --out dist/browser",
+    "demo": "node demo/browser/build.mjs && showcase terminal demo/browser --out dist/browser --serve",
+    "media:capture": "node demo/capture.mjs"
   },
   "publishConfig": {
     "access": "public"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
     "@mariozechner/pi-tui": "^0.73.1",
     "@release-it/conventional-changelog": "^10.0.5",
+    "@soleone/showcase": "github:Soleone/showcase#658b1b5",
+    "esbuild": "0.25.10",
     "release-it": "^19.2.4"
   }
 }

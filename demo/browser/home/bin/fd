@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+// A placeholder for fd, which the sandbox lacks: pi checks for it at startup and warns when it is missing.
+// It reports a version and finds nothing, so @-file completion stays empty in the demo.
+if (process.argv.includes("--version")) console.log("fd (demo placeholder)");

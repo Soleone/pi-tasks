@@ -1,0 +1,40 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Soleone/showcase/main/schema/showcase.schema.json",
+  "title": "pi-tasks",
+  "pitch": "Your project's task list inside pi: browse it, edit it, and hand a task to the agent.",
+  "description": "A keyboard-driven list over the task tracker the project already uses: sq, tq, beads, a Tasks workspace or a plain TODO.md. Group by parent, edit status, priority and blockers, and press Enter to have the agent work on one.",
+  "kind": "agent-extension",
+  "stage": "product",
+  "year": 2026,
+  "tech": [
+    "TypeScript",
+    "pi"
+  ],
+  "repo": "https://github.com/Soleone/pi-tasks",
+  "live": "https://pi-tasks.soleone.xyz",
+  "media": {
+    "hero": "demo/media/hero.png",
+    "motion": "demo/media/demo.webp",
+    "capture": "npm run media:capture"
+  },
+  "demo": {
+    "strategy": "browser-terminal",
+    "local": "npm run demo",
+    "externals": [
+      {
+        "name": "Model provider",
+        "type": "model",
+        "seam": "pi.registerProvider; the demo's extension registers a scripted provider (demo/browser/home/.pi/agent/extensions/demo-model.ts)",
+        "standIn": "simulated",
+        "note": "The model is scripted: it knows two of the sample tasks, and nothing is sent anywhere."
+      },
+      {
+        "name": "Task backend CLIs (sq, tq, bd, tasks-cli)",
+        "type": "app",
+        "seam": "PI_TASKS_BACKEND picks the backend; the demo sets todo-md",
+        "standIn": "omitted",
+        "note": "The tasks live in the sample project's TODO.md; the sq, tq, beads and Tasks backends need their own CLIs."
+      }
+    ]
+  }
+}

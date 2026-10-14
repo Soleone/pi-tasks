@@ -1,3 +1,7 @@
 node_modules/
 .pi-subagents/
 .npmrc
+dist/
+demo/browser/.build/
+# The demo sandbox's pi config (a global ignore often hides .pi/).
+!demo/browser/home/.pi/

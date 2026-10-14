@@ -1,0 +1,8 @@
+{
+  "defaultProvider": "demo",
+  "defaultModel": "scripted",
+  "defaultThinkingLevel": "medium",
+  "quietStartup": true,
+  "enableInstallTelemetry": false,
+  "theme": "showcase"
+}

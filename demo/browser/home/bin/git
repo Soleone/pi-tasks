@@ -1,0 +1,36 @@
+#!/usr/bin/env node
+// A stand-in for git: the sandbox has none. It answers the two questions pi and pi-statusline ask,
+// the branch and whether the working tree changed since the demo started (against .demo/baseline.json).
+const { createHash } = require("node:crypto");
+const { readFileSync, readdirSync, statSync } = require("node:fs");
+const path = require("node:path");
+
+const args = process.argv.slice(2).filter((arg) => arg !== "--no-optional-locks");
+const home = path.join(__dirname, "..");
+const project = path.join(home, "project");
+
+function files(dir, base = dir) {
+  return readdirSync(dir).flatMap((name) => {
+    if (name === ".git" || name === "node_modules") return [];
+    const file = path.join(dir, name);
+    return statSync(file).isDirectory() ? files(file, base) : [path.relative(base, file)];
+  });
+}
+const hash = (file) => createHash("sha1").update(readFileSync(path.join(project, file))).digest("hex");
+
+if (args[0] === "symbolic-ref") {
+  process.stdout.write("main\n");
+} else if (args[0] === "status") {
+  const baseline = JSON.parse(readFileSync(path.join(home, ".demo/baseline.json"), "utf8"));
+  const current = files(project);
+  const changes = [
+    ...current.filter((file) => !(file in baseline)).map((file) => `?? ${file}`),
+    ...current.filter((file) => file in baseline && baseline[file] !== hash(file)).map((file) => ` M ${file}`),
+    ...Object.keys(baseline).filter((file) => !current.includes(file)).map((file) => ` D ${file}`),
+  ];
+  const zero = args.includes("-z");
+  process.stdout.write(changes.map((line) => line + (zero ? "\0" : "\n")).join(""));
+} else {
+  process.stderr.write(`git ${args.join(" ")}: only a stand-in for git runs in this demo.\n`);
+  process.exit(1);
+}
