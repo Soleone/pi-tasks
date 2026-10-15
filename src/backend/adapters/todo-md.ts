@@ -47,12 +47,15 @@ interface TodoDocument {
   tasks: TodoTaskRecord[]
 }
 
+function existingTodoFile(): string | undefined {
+  return DEFAULT_TODO_FILES.find(file => existsSync(resolve(process.cwd(), file)))
+}
+
 function configuredTodoPath(): string {
   const fromEnv = process.env[TODO_FILE_ENV]?.trim()
   if (fromEnv && fromEnv.length > 0) return fromEnv
 
-  const existingDefault = DEFAULT_TODO_FILES.find(file => existsSync(resolve(process.cwd(), file)))
-  return existingDefault ?? DEFAULT_TODO_FILES[0]
+  return existingTodoFile() ?? DEFAULT_TODO_FILES[0]
 }
 
 function resolveTodoPath(): string {
@@ -381,7 +384,7 @@ async function writeDocument(filePath: string, document: TodoDocument): Promise<
 }
 
 function detect(): TaskAdapterDetection {
-  return "final"
+  return existingTodoFile() ? "project" : "final"
 }
 
 function initialize(_pi: ExtensionAPI): TaskAdapter {

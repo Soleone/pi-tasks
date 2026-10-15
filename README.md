@@ -45,7 +45,7 @@ Relationship pickers exclude the current task. Parent cycles, self-links, and de
 
 ## Task backends
 
-By default, project-specific matches take precedence, followed by the installed `sq` default, then Tasks as a category-scoped fallback when its workspace and `tasks-cli` are available. If none are available, the extension uses `todo-md`. Projects with a `.tq` directory use the `tq` backend for that session.
+By default, project-specific matches take precedence over generic defaults. A matching Tasks category, `.tq` project, `.beads` project, or existing `TODO.md`/`todo.md` is a project match, so an existing TODO file selects `todo-md` instead of the installed `sq` default. If no project-specific match applies, installed `sq` is the default, followed by Tasks as a category-scoped fallback when its workspace and `tasks-cli` are available. If none are available, `todo-md` remains the final fallback. When multiple project matches apply, registry order breaks the tie.
 
 For most setups, `sq` is recommended as the default backend. It is lightweight, works well in brand new directories, and can create its local data on demand. Install it from the [`sq` installation guide](https://github.com/DerekStride/sq?tab=readme-ov-file#installation).
 

@@ -79,7 +79,7 @@ Resolution behavior:
 
 1. `PI_TASKS_BACKEND` selects an adapter by `id`
 2. otherwise every adapter reports a detection tier, and the resolver selects by precedence: `project`, `default`, `fallback`, then `final`
-3. registry order in `resolver.ts` breaks ties within a tier; `todo-md` reports `final`
+3. registry order in `resolver.ts` breaks ties within a tier; `todo-md` reports `project` when `TODO.md` or `todo.md` exists, otherwise `final`
 
 `detect()` and `initialize()` run synchronously while the extension loads, so detection cannot await. The `tasks` adapter therefore reads the canonical JSON workspace directly to find its category and defers launching the backend until the first request.
 

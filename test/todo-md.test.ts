@@ -3,6 +3,8 @@ import assert from "node:assert/strict"
 import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { resolveAdapterInitializer } from "../src/backend/resolver.ts"
+import type { TaskAdapterInitializer } from "../src/backend/api.ts"
 import todoMdInitializer, { parseTodoDocument, renderTodoDocument } from "../src/backend/adapters/todo-md.ts"
 
 test("nested checklist items become parent and child tasks", () => {
@@ -27,6 +29,39 @@ test("nested hierarchy round trips without turning descriptions into tasks", () 
   assert.equal(second.tasks.length, 2)
   assert.equal(second.tasks[1]!.parentRef, second.tasks[0]!.ref)
   assert.equal(second.tasks[1]!.description, "- implementation note")
+})
+
+test("an existing TODO file outranks sq's default detection", async () => {
+  const previousCwd = process.cwd()
+  const previousBackend = process.env.PI_TASKS_BACKEND
+  const previousTodoPath = process.env.PI_TASKS_TODO_PATH
+  const directory = await mkdtemp(join(tmpdir(), "pi-tasks-detect-"))
+  const sqAdapter: TaskAdapterInitializer = {
+    id: "sq",
+    detect: () => "default",
+    initialize: () => { throw new Error("not used") },
+  }
+
+  try {
+    delete process.env.PI_TASKS_BACKEND
+    delete process.env.PI_TASKS_TODO_PATH
+    process.chdir(directory)
+    assert.equal(resolveAdapterInitializer([sqAdapter, todoMdInitializer]), sqAdapter)
+
+    await writeFile(join(directory, "TODO.md"), "# Tasks\n", "utf8")
+    assert.equal(resolveAdapterInitializer([sqAdapter, todoMdInitializer]), todoMdInitializer)
+
+    const lowercaseDirectory = await mkdtemp(join(tmpdir(), "pi-tasks-detect-"))
+    await writeFile(join(lowercaseDirectory, "todo.md"), "# Tasks\n", "utf8")
+    process.chdir(lowercaseDirectory)
+    assert.equal(resolveAdapterInitializer([sqAdapter, todoMdInitializer]), todoMdInitializer)
+  } finally {
+    process.chdir(previousCwd)
+    if (previousBackend === undefined) delete process.env.PI_TASKS_BACKEND
+    else process.env.PI_TASKS_BACKEND = previousBackend
+    if (previousTodoPath === undefined) delete process.env.PI_TASKS_TODO_PATH
+    else process.env.PI_TASKS_TODO_PATH = previousTodoPath
+  }
 })
 
 test("todo list scopes between open and archived tasks", async () => {
