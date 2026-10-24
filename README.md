@@ -45,13 +45,13 @@ Relationship pickers exclude the current task. Parent cycles, self-links, and de
 
 ## Task backends
 
-By default, project-specific matches take precedence over generic defaults. A matching Tasks category, `.tq` project, `.beads` project, or existing `TODO.md`/`todo.md` is a project match, so an existing TODO file selects `todo-md` instead of the installed `sq` default. If no project-specific match applies, installed `sq` is the default, followed by Tasks as a category-scoped fallback when its workspace and `tasks-cli` are available. If none are available, `todo-md` remains the final fallback. When multiple project matches apply, registry order breaks the tie.
+A project match wins over a generic default: a matching Tasks category, a `.tq` or `.beads` project, or an existing `TODO.md`/`todo.md`. So an existing TODO file selects `todo-md` even when `sq` is installed. Without a project match, installed `sq` is the default, then Tasks scoped to the project's category when its workspace and `tasks-cli` are available, then `todo-md`. Registry order breaks ties between project matches.
 
-For most setups, `sq` is recommended as the default backend. It is lightweight, works well in brand new directories, and can create its local data on demand. Install it from the [`sq` installation guide](https://github.com/DerekStride/sq?tab=readme-ov-file#installation).
+`sq` is the recommended default: it is lightweight and creates its local data on demand, even in a brand new directory. Install it from the [`sq` installation guide](https://github.com/DerekStride/sq?tab=readme-ov-file#installation).
 
 ### Supported backends:
 
-- [Tasks](https://github.com/Soleone/tasks) - Reads and writes a Tasks workspace through `tasks-cli`, scoped to the `@category` that matches the project name. Detection runs first, so a matching category claims the project.
+- [Tasks](https://github.com/Soleone/tasks) - Reads and writes a Tasks workspace through `tasks-cli`, scoped to the `@category` that matches the project name.
 - [sq](https://github.com/DerekStride/sq) - Uses the `sq` cli to manage tasks in a `.sift` directory via a `issues.jsonl` file. No initialization necessary.
 - `tq` - Uses the `tq` cli to manage tasks in a `.tq/tasks.jsonl` file. Automatically preferred when a `.tq` directory is detected.
 - [beads](https://github.com/steveyegge/beads) - Uses the `bd` cli to manage tasks into a `.beads` directory containing multiple files.
@@ -59,12 +59,12 @@ For most setups, `sq` is recommended as the default backend. It is lightweight, 
 
 ### Tasks workspace backend
 
-The `tasks` backend talks to the same command path as the Tasks desktop app, so the list, the app, and any other agent stay in sync without a shared file format to negotiate. Automatic detection needs two things:
+The `tasks` backend talks to the same command path as the Tasks desktop app, so the list, the app and other agents stay in sync. Automatic detection needs two things:
 
 1. The Tasks workspace exists (`com.soleone.tasks/tasks.db` in the platform data directory, or wherever `TASKS_DATABASE_PATH` points).
 2. The project name matches a `@category` that at least one non-canceled task uses.
 
-So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only those tasks are listed. For Git projects, pi-tasks uses the main repository directory, so linked worktrees share the same category; other projects use the current directory. The project name is lowercased and anything outside letters, numbers, hyphens and underscores becomes a hyphen, so `My.App` reads as `@my-app`. If no category matches, Tasks stays out of the way during normal detection. If no other project backend applies, it can serve as the fallback using the derived project category, so unrelated workspace tasks are not shown.
+So a task titled `Fix the bar @pi-tasks` belongs to this repository, and only those tasks are listed. For Git projects, pi-tasks uses the main repository directory, so linked worktrees share the same category; other projects use the current directory. The project name is lowercased and anything outside letters, numbers, hyphens and underscores becomes a hyphen, so `My.App` reads as `@my-app`.
 
 Because Tasks derives `@category` from the title, the adapter keeps the scope token there: created tasks get it appended, renamed tasks keep it, and a title that uses a different category is rejected instead of quietly moving the task out of the project.
 
