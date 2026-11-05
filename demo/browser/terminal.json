@@ -1,5 +1,6 @@
 {
   "project": "../..",
+  "skin": "https://raw.githubusercontent.com/Soleone/showcase-live-kit/main/terminal",
   "mount": {
     ".": {
       "from": "./home"
