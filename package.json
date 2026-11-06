@@ -51,7 +51,7 @@
     "@mariozechner/pi-tui": "^0.73.1",
     "@release-it/conventional-changelog": "^10.0.5",
     "@soleone/showcase-capture": "^0.1.0",
-    "@soleone/showcase-terminal": "^0.1.0",
+    "@soleone/showcase-terminal": "^0.2.0",
     "esbuild": "0.25.10",
     "release-it": "^19.2.4"
   }
