@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
-import { record } from "@soleone/showcase/capture";
+import { record } from "@soleone/showcase-capture";
 
 const exec = promisify(execFile);
 const media = path.resolve("demo/media");
